@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "image-compile"
+version = "0.1.0"
+description = "Builds pinned wrapper images for agent-platform flavours (openclaw, nanoclaw, ...) and produces paired defaults bundles."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "ARC Power" }]
+license = { text = "Proprietary" }
+dependencies = [
+    "click>=8.1",
+    "PyYAML>=6.0",
+    "ruamel.yaml>=0.18",
+    "requests>=2.31",
+    "rich>=13.7",
+    "Jinja2>=3.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[project.scripts]
+image-compile = "image_compile.__main__:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/image_compile"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"templates" = "image_compile/templates"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"

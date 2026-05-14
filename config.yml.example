@@ -1,0 +1,58 @@
+# image-compile configuration. Copy to config.yml and edit. See
+# docs/image-compile-brief-amendments-v0_1.md Amendment 1 for the multi-flavour shape.
+
+ghcr:
+  org: arcpower                                       # GHCR org/user that owns the image repos
+  auth_method: docker_config                          # reads ~/.docker/config.json
+
+registry:
+  root: ~/registry                                    # where image_defaults/ and compatibility_matrix.yml live
+  archive_root: ~/registry/.archive                   # where superseded bundles go on --force
+
+probe_dir_root: /tmp/image-compile                    # surface mounts for the probe container
+cleanup_on_success: true
+cleanup_on_failure: false                             # keep probe dirs on failure for inspection
+remove_local_image_on_failure: true                   # remove locally-loaded tag if build/probe fails
+
+logging:
+  level: INFO
+  file: ~/.local/state/image-compile/run.log
+
+flavours:
+  openclaw:
+    image_line: openclaw-runtime                      # → ghcr.io/<org>/openclaw-runtime
+    wrapper_repo_default: ../openclaw-runtime         # path to the wrapper repo
+    upstream:
+      kind: github_release
+      repo: openclaw/openclaw
+      version_strip_prefix: "v"                       # "v2026.5.5" → image segment "2026.5.5"
+    probe:
+      stub_config_template: openclaw/starting-openclaw.json.j2
+      stub_secrets_template: openclaw/probe-stub-secrets.env
+      startup_timeout_seconds: 30
+      settle_seconds: 5
+      health_endpoint: /healthz
+      ready_endpoint: /readyz
+      port_env_var: OPENCLAW_PORT
+      default_port: 18789
+    workspace_templates_dir: openclaw/blank-workspace
+    required_wrapper_files: [Dockerfile, entrypoint.sh]
+
+  # nanoclaw:
+  #   image_line: nanoclaw-runtime
+  #   wrapper_repo_default: ../nanoclaw-runtime
+  #   upstream:
+  #     kind: github_release
+  #     repo: nanoclaw/nanoclaw
+  #     version_strip_prefix: "v"
+  #   probe:
+  #     stub_config_template: nanoclaw/starting-nanoclaw.json.j2
+  #     stub_secrets_template: nanoclaw/probe-stub-secrets.env
+  #     startup_timeout_seconds: 30
+  #     settle_seconds: 5
+  #     health_endpoint: /healthz
+  #     ready_endpoint: /ready
+  #     port_env_var: NANOCLAW_PORT
+  #     default_port: 17000
+  #   workspace_templates_dir: nanoclaw/blank-workspace
+  #   required_wrapper_files: [Dockerfile, entrypoint.sh]

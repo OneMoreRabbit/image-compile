@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+# Python files always LF — pytest collection and tooling are line-ending sensitive.
+*.py        text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.json      text eol=lf
+*.j2        text eol=lf
+*.env       text eol=lf
+*.toml      text eol=lf
+*.md        text eol=lf
+.gitignore  text eol=lf

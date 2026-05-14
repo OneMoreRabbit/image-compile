@@ -1,0 +1,19 @@
+# Tools
+
+This is the blank-workspace TOOLS.md scaffold included in every openclaw image defaults bundle.
+It documents no tools. Specialised templates override this file in full to describe the tools
+their agent is expected to call.
+
+## Image provenance
+
+- Image version: `{{ image_version }}`
+- Upstream OpenClaw: `{{ upstream_version }}`
+- Built: `{{ build_date }}`
+
+## Default tooling
+
+No tools are configured at the image defaults level. The gateway is reachable on its configured
+port, and any other tool integration (dprox, channels, model providers) is introduced by the
+specialised template or instance compile step.
+
+ARC Power Limited.

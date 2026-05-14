@@ -1,0 +1,22 @@
+# Agent rules
+
+This is the blank-workspace AGENTS.md scaffold included in every openclaw image defaults bundle.
+It defines no agent-specific rules. Specialised templates override this file in full.
+
+## Image provenance
+
+- Image version: `{{ image_version }}`
+- Upstream OpenClaw: `{{ upstream_version }}`
+- Built: `{{ build_date }}`
+
+## Default scope
+
+This is a fresh, unspecialised OpenClaw agent. Rules, tone, escalation policy, and any
+operator-facing guidance are introduced by the specialised template that derives from this image
+defaults bundle. Until then, the agent should:
+
+- Acknowledge that it has no operator-defined remit.
+- Refuse to take any action that requires elevated privilege or external side effects.
+- Direct any operational question to a human.
+
+ARC Power Limited — see [www.arcpower.co](https://www.arcpower.co).

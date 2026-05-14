@@ -1,0 +1,32 @@
+{
+  "$schema": "openclaw://schema/openclaw.json",
+  "meta": {
+    "lastTouchedVersion": "{{ image_compile_version | default('0.1.0') }}",
+    "lastTouchedAt": "{{ build_date | default('2026-05-14T00:00:00Z') }}"
+  },
+  "wizard": {
+    "lastRunAt": "{{ build_date | default('2026-05-14T00:00:00Z') }}",
+    "lastRunVersion": "image-compile-probe",
+    "lastRunMode": "local"
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "{{ OPENCLAW_BIND | default('lan') }}",
+    "port": {{ OPENCLAW_PORT | default(18789) }},
+    "auth": {
+      "mode": "token",
+      "token": {
+        "source": "env",
+        "provider": "default",
+        "id": "OPENCLAW_GATEWAY_TOKEN"
+      }
+    },
+    "remote": {
+      "token": {
+        "source": "env",
+        "provider": "default",
+        "id": "OPENCLAW_GATEWAY_TOKEN"
+      }
+    }
+  }
+}
