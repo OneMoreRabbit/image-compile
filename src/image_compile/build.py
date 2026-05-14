@@ -31,6 +31,7 @@ from .bundle import build_metadata, write_bundle
 from .config import Config
 from .docker_build import BuildPlan, construct_argv_for_display, run_build
 from .docker_cli import DockerCLI, DockerError
+from .matrix import load_matrix, self_blessed_entry, upsert_entry, write_matrix
 from .preflight import PreflightError, run_preflight
 from .probe import ProbeError, run_probe
 from .registry_paths import archive_existing_bundle, ensure_bundle_dir
@@ -236,15 +237,49 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
             rel = p
         console.print(f"  [dim]{rel}[/dim]")
 
-    # ----- Push (Phase 2) ----------------------------------------------
-    if not opts.no_push:
-        console.print("[yellow]push to GHCR is Phase 2 — skipped for now[/yellow]")
-    else:
+    # ----- Push --------------------------------------------------------
+    pushed = False
+    if opts.no_push:
         console.print("[dim]--no-push: skipping GHCR push as requested[/dim]")
+    else:
+        console.print(f"[bold]pushing[/bold] {plan.image_tag}")
+        try:
+            docker.run(["push", plan.image_tag])
+            pushed = True
+            console.print("[green]pushed[/green]")
+        except DockerError as e:
+            _write_failure_artifact("push", "stderr.log", e.stderr or str(e))
+            err_console.print(
+                f"[red]docker push failed:[/red] {e.stderr.strip() or e}\n"
+                f"  bundle is on disk; re-run with --no-bundle to retry just the push."
+            )
+            return exit_codes.PUSH_FAILED
+
+    # ----- Matrix update ----------------------------------------------
+    if pushed or opts.no_push:
+        try:
+            mtx = load_matrix(plan.bundle_layout.matrix_file)
+            entry = self_blessed_entry(
+                flavour=plan.flavour.name,
+                image_version=plan.image_version,
+                tested_at=datetime.now(timezone.utc),
+            )
+            replaced = upsert_entry(mtx, entry)
+            write_matrix(plan.bundle_layout.matrix_file, mtx)
+            verb = "updated" if replaced else "appended"
+            console.print(f"[green]matrix[/green] {verb} self-blessed entry for "
+                          f"{plan.flavour.name}:{plan.image_version}")
+        except (OSError, ValueError) as e:
+            err_console.print(f"[red]matrix write failed:[/red] {e}")
+            return exit_codes.REGISTRY_WRITE_FAILED
 
     # ----- Summary -----------------------------------------------------
     console.print()
     console.print(f"[bold green]ok[/bold green]: {plan.image_tag}")
     console.print(f"  bundle: {plan.bundle_layout.bundle_dir}")
-    console.print(f"  matrix update: deferred to Phase 2")
+    if pushed:
+        console.print(f"  ghcr:   pushed")
+    elif opts.no_push:
+        console.print(f"  ghcr:   skipped (--no-push)")
+    console.print(f"  matrix: {plan.bundle_layout.matrix_file}")
     return exit_codes.OK

@@ -34,8 +34,10 @@ class BundleLayout:
 
     @property
     def config_file(self) -> Path:
-        # Filename is flavour-agnostic at the registry level; callers know what's inside.
-        return self.bundle_dir / "openclaw.json"
+        # Filename follows the agent-compile contract: `<flavour>.json` so each
+        # flavour's bundle is self-describing and a tool reading the bundle dir
+        # knows which schema to expect without looking at metadata.yml.
+        return self.bundle_dir / f"{self.flavour}.json"
 
     @property
     def workspace_dir(self) -> Path:

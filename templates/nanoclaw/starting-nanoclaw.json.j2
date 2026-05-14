@@ -1,0 +1,8 @@
+{
+  "$schema": "nanoclaw://schema/nanoclaw.json",
+  "_note": "Stub starting config for the nanoclaw probe. Tune against the actual nanoclaw upstream when it lands; the fields below are placeholders matched to the multi-flavour probe contract, not the nanoclaw schema (which doesn't exist yet).",
+  "gateway": {
+    "bind": "{{ NANOCLAW_BIND | default('lan') }}",
+    "port": {{ NANOCLAW_PORT | default(17000) }}
+  }
+}

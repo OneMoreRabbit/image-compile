@@ -142,7 +142,15 @@ def probe_cmd(flavour: str, image_tag: str, pull: bool, output_path: Path | None
         err_console.print(f"[red]config error:[/red] {e}")
         sys.exit(exit_codes.CONFIG_ERROR)
 
-    _stub("probe", flavour=flavour, image_tag=image_tag, pull=pull, output_path=output_path)
+    from .probe_verb import ProbeVerbOptions, run_probe_verb
+    code = run_probe_verb(cfg, ProbeVerbOptions(
+        flavour=flavour,
+        image_tag=image_tag,
+        pull=pull,
+        output_path=output_path,
+        quiet=quiet,
+    ))
+    sys.exit(code)
 
 
 # ---------------------------------------------------------------------------
@@ -151,8 +159,10 @@ def probe_cmd(flavour: str, image_tag: str, pull: bool, output_path: Path | None
 
 @cli.command("list")
 @click.argument("flavour", required=False)
+@click.option("--no-ghcr", is_flag=True, help="Skip the GHCR existence check.")
 @common_options
-def list_cmd(flavour: str | None, config_path: Path | None, registry_root: Path | None,
+def list_cmd(flavour: str | None, no_ghcr: bool,
+             config_path: Path | None, registry_root: Path | None,
              json_output: bool, verbose: bool, quiet: bool) -> None:
     """Show built images known to GHCR, paired with their defaults bundles."""
     try:
@@ -163,7 +173,17 @@ def list_cmd(flavour: str | None, config_path: Path | None, registry_root: Path 
         err_console.print(f"[red]config error:[/red] {e}")
         sys.exit(exit_codes.CONFIG_ERROR)
 
-    _stub("list", flavour=flavour)
+    if registry_root is not None:
+        from dataclasses import replace
+        cfg = replace(cfg, registry=replace(
+            cfg.registry, root=registry_root, archive_root=registry_root / ".archive"
+        ))
+
+    from .list_verb import ListOptions, run_list_verb
+    code = run_list_verb(cfg, ListOptions(
+        flavour=flavour, check_ghcr=not no_ghcr, json_output=json_output,
+    ))
+    sys.exit(code)
 
 
 # ---------------------------------------------------------------------------
@@ -173,9 +193,12 @@ def list_cmd(flavour: str | None, config_path: Path | None, registry_root: Path 
 @cli.command("verify")
 @click.argument("flavour")
 @click.argument("image_version")
+@click.option("--require-ghcr", is_flag=True,
+              help="Treat GHCR absence as a failure (default: GHCR is best-effort).")
 @common_options
-def verify_cmd(flavour: str, image_version: str, config_path: Path | None,
-               registry_root: Path | None, json_output: bool, verbose: bool, quiet: bool) -> None:
+def verify_cmd(flavour: str, image_version: str, require_ghcr: bool,
+               config_path: Path | None, registry_root: Path | None,
+               json_output: bool, verbose: bool, quiet: bool) -> None:
     """Cross-check image tag, defaults bundle, and matrix entry all exist and agree."""
     try:
         cfg = load_config(config_path)
@@ -184,7 +207,18 @@ def verify_cmd(flavour: str, image_version: str, config_path: Path | None,
         err_console.print(f"[red]config error:[/red] {e}")
         sys.exit(exit_codes.CONFIG_ERROR)
 
-    _stub("verify", flavour=flavour, image_version=image_version)
+    if registry_root is not None:
+        from dataclasses import replace
+        cfg = replace(cfg, registry=replace(
+            cfg.registry, root=registry_root, archive_root=registry_root / ".archive"
+        ))
+
+    from .verify_verb import VerifyOptions, run_verify_verb
+    code = run_verify_verb(cfg, VerifyOptions(
+        flavour=flavour, image_version=image_version,
+        require_ghcr=require_ghcr, json_output=json_output,
+    ))
+    sys.exit(code)
 
 
 # ---------------------------------------------------------------------------

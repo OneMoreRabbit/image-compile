@@ -2,7 +2,7 @@
 # docs/image-compile-brief-amendments-v0_1.md Amendment 1 for the multi-flavour shape.
 
 ghcr:
-  org: arcpower                                       # GHCR org/user that owns the image repos
+  org: jobcpf                                         # GHCR org/user that owns the image repos
   auth_method: docker_config                          # reads ~/.docker/config.json
 
 registry:
@@ -38,21 +38,21 @@ flavours:
     workspace_templates_dir: openclaw/blank-workspace
     required_wrapper_files: [Dockerfile, entrypoint.sh]
 
-  # nanoclaw:
-  #   image_line: nanoclaw-runtime
-  #   wrapper_repo_default: ../nanoclaw-runtime
-  #   upstream:
-  #     kind: github_release
-  #     repo: nanoclaw/nanoclaw
-  #     version_strip_prefix: "v"
-  #   probe:
-  #     stub_config_template: nanoclaw/starting-nanoclaw.json.j2
-  #     stub_secrets_template: nanoclaw/probe-stub-secrets.env
-  #     startup_timeout_seconds: 30
-  #     settle_seconds: 5
-  #     health_endpoint: /healthz
-  #     ready_endpoint: /ready
-  #     port_env_var: NANOCLAW_PORT
-  #     default_port: 17000
-  #   workspace_templates_dir: nanoclaw/blank-workspace
-  #   required_wrapper_files: [Dockerfile, entrypoint.sh]
+  nanoclaw:
+    image_line: nanoclaw-runtime                      # → ghcr.io/<org>/nanoclaw-runtime
+    wrapper_repo_default: ../nanoclaw-runtime         # (no wrapper repo yet — config-only stub)
+    upstream:
+      kind: github_release
+      repo: nanoclaw/nanoclaw
+      version_strip_prefix: "v"
+    probe:
+      stub_config_template: nanoclaw/starting-nanoclaw.json.j2
+      stub_secrets_template: nanoclaw/probe-stub-secrets.env
+      startup_timeout_seconds: 30
+      settle_seconds: 5
+      health_endpoint: /healthz
+      ready_endpoint: /ready
+      port_env_var: NANOCLAW_PORT
+      default_port: 17000
+    workspace_templates_dir: nanoclaw/blank-workspace
+    required_wrapper_files: [Dockerfile, entrypoint.sh]

@@ -41,6 +41,11 @@ def test_bundle_layout_paths(tmp_path: Path) -> None:
     assert not layout.exists()
 
 
+def test_bundle_layout_config_file_uses_flavour(tmp_path: Path) -> None:
+    layout = BundleLayout(root=tmp_path, image_version="1.2.3-r1", flavour="nanoclaw")
+    assert layout.config_file == layout.bundle_dir / "nanoclaw.json"
+
+
 def test_ensure_bundle_dir_creates_workspace(tmp_path: Path) -> None:
     layout = BundleLayout(root=tmp_path, image_version="x-r1", flavour="openclaw")
     ensure_bundle_dir(layout)
