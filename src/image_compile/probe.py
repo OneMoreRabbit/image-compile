@@ -336,10 +336,18 @@ def run_probe(flavour: FlavourConfig, image_tag: str, image_version: str,
         templates_root=templates_root,
     )
 
-    setup.probe_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        setup.probe_dir.mkdir(parents=True, exist_ok=True)
+        setup_probe_dirs(setup)
+        render_stub_files(setup)
+    except OSError as e:
+        raise ProbeError(
+            f"cannot prepare probe directory {setup.probe_dir}: {e}.\n"
+            f"  If {probe_dir_root} is owned by another user, either clear it "
+            f"or set a per-user `probe_dir_root` in config.yml.",
+            exit_codes.PROBE_FAILED,
+        ) from e
     progress(f"probe dir: {setup.probe_dir}")
-    setup_probe_dirs(setup)
-    render_stub_files(setup)
     progress(f"stub config + secrets rendered into {setup.configs_dir/'main'}")
 
     progress(f"starting probe container {setup.container_name}")

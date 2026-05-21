@@ -10,12 +10,29 @@ without making every new optional knob a breaking change.
 """
 from __future__ import annotations
 
+import getpass
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+
+def _default_probe_dir_root() -> Path:
+    """Per-user probe scratch root.
+
+    The probe creates ephemeral surface-mount directories here. The root must
+    be per-user: a shared `/tmp/image-compile` created by one user is mode 0755
+    and unwritable by another, so two operators on the same build host would
+    collide. Keying on the username sidesteps that entirely.
+    """
+    try:
+        user = getpass.getuser()
+    except Exception:                          # getuser can raise if no passwd entry
+        user = str(os.getuid()) if hasattr(os, "getuid") else "user"
+    return Path(tempfile.gettempdir()) / f"image-compile-{user}"
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +127,7 @@ class Config:
     ghcr: GhcrConfig
     registry: RegistryConfig
     flavours: dict[str, FlavourConfig]
-    probe_dir_root: Path = Path("/tmp/image-compile")
+    probe_dir_root: Path = field(default_factory=_default_probe_dir_root)
     cleanup_on_success: bool = True
     cleanup_on_failure: bool = False
     remove_local_image_on_failure: bool = True
@@ -252,7 +269,8 @@ def load_config(path: Path | None = None) -> Config:
         ghcr=ghcr,
         registry=registry,
         flavours=flavours,
-        probe_dir_root=_expand_path(raw.get("probe_dir_root", "/tmp/image-compile")),
+        probe_dir_root=(_expand_path(raw["probe_dir_root"])
+                        if raw.get("probe_dir_root") else _default_probe_dir_root()),
         cleanup_on_success=bool(raw.get("cleanup_on_success", True)),
         cleanup_on_failure=bool(raw.get("cleanup_on_failure", False)),
         remove_local_image_on_failure=bool(raw.get("remove_local_image_on_failure", True)),

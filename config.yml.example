@@ -6,10 +6,15 @@ ghcr:
   auth_method: docker_config                          # reads ~/.docker/config.json
 
 registry:
-  root: ~/registry                                    # where image_defaults/ and compatibility_matrix.yml live
-  archive_root: ~/registry/.archive                   # where superseded bundles go on --force
+  root: ~/ansible/registry                            # where image_defaults/ and compatibility_matrix.yml live
+  archive_root: ~/ansible/registry/.archive           # where superseded bundles go on --force
 
-probe_dir_root: /tmp/image-compile                    # surface mounts for the probe container
+# probe_dir_root: surface mounts for the probe container. Leave unset to use
+# the per-user default (<tmpdir>/image-compile-<username>) — recommended on any
+# host where more than one user runs the tool. Only set this if you need the
+# probe scratch somewhere specific.
+# probe_dir_root: /tmp/image-compile-myuser
+
 cleanup_on_success: true
 cleanup_on_failure: false                             # keep probe dirs on failure for inspection
 remove_local_image_on_failure: true                   # remove locally-loaded tag if build/probe fails
