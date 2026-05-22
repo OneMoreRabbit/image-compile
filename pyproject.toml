@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "image-compile"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Builds pinned wrapper images for agent-platform flavours (openclaw, nanoclaw, ...) and produces paired defaults bundles."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,6 +27,10 @@ dev = [
 
 [project.scripts]
 image-compile = "image_compile.__main__:cli"
+
+[tool.hatch.version]
+# Single source of truth: __version__ in the package __init__.py.
+path = "src/image_compile/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/image_compile"]
