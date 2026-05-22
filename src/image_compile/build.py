@@ -251,7 +251,9 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
             _write_failure_artifact("push", "stderr.log", e.stderr or str(e))
             err_console.print(
                 f"[red]docker push failed:[/red] {e.stderr.strip() or e}\n"
-                f"  bundle is on disk; re-run with --no-bundle to retry just the push."
+                f"  the image is built locally and the bundle is on disk.\n"
+                f"  once GHCR auth is fixed, re-run `image-compile build {opts.flavour} "
+                f"{opts.upstream_version} --force` to complete the push and matrix update."
             )
             return exit_codes.PUSH_FAILED
 
