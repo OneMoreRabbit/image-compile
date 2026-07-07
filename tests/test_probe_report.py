@@ -4,7 +4,9 @@ from __future__ import annotations
 import pytest
 
 from image_compile.probe_report import (
-    DiffEntry, classify_relocation, parse_docker_diff, partition_diff_by_surface,
+    DiffEntry, InContainerWriteRecord, classify_relocation, parse_docker_diff,
+    partition_diff_by_surface, summarize_relocation_candidates,
+    summarize_relocation_from_yaml,
 )
 
 
@@ -86,3 +88,62 @@ def test_partition_paths_outside_mount_root_are_in_container() -> None:
     surface_writes, in_container = partition_diff_by_surface(entries)
     assert all(records == [] for records in surface_writes.values())
     assert {e.path for e in in_container} == {"/tmp/foo", "/usr/local/bin/openclaw"}
+
+
+# ---------------------------------------------------------------------------
+# summarize_relocation_candidates / summarize_relocation_from_yaml
+# ---------------------------------------------------------------------------
+
+def test_summarize_relocation_candidates_flags_likely_and_unknown() -> None:
+    records = [
+        InContainerWriteRecord(path="/home/agent/.openclaw/state/openclaw.sqlite",
+                               change="added", candidate_for_relocation="likely"),
+        InContainerWriteRecord(path="/home/agent/.openclaw/credentials",
+                               change="added", candidate_for_relocation="unknown"),
+        InContainerWriteRecord(path="/tmp/openclaw.sock",
+                               change="added", candidate_for_relocation="unlikely"),
+    ]
+    summary = summarize_relocation_candidates(records)
+    assert summary.likely == ("/home/agent/.openclaw/state/openclaw.sqlite",)
+    assert summary.unknown == ("/home/agent/.openclaw/credentials",)
+    assert summary.total == 2
+    assert bool(summary) is True
+    assert "2 in-container write(s)" in summary.one_line()
+    assert "1 likely" in summary.one_line()
+    assert "1 unknown" in summary.one_line()
+
+
+def test_summarize_relocation_candidates_empty_when_all_unlikely() -> None:
+    records = [
+        InContainerWriteRecord(path="/run/agent.pid", change="added",
+                               candidate_for_relocation="unlikely"),
+    ]
+    summary = summarize_relocation_candidates(records)
+    assert summary.total == 0
+    assert bool(summary) is False
+
+
+def test_summarize_relocation_from_yaml_matches_report_shape() -> None:
+    # The on-disk shape written by ProbeReport.to_yaml_dict().
+    report = {
+        "in_container_writes": [
+            {"path": "/home/agent/.openclaw/state/openclaw.sqlite",
+             "change": "added", "candidate_for_relocation": "likely"},
+            {"path": "/home/agent/.npm/_cacache/x", "change": "added",
+             "candidate_for_relocation": "unknown"},
+            {"path": "/tmp/x.lock", "change": "added",
+             "candidate_for_relocation": "unlikely"},
+        ],
+    }
+    summary = summarize_relocation_from_yaml(report)
+    assert summary.likely == ("/home/agent/.openclaw/state/openclaw.sqlite",)
+    assert summary.unknown == ("/home/agent/.npm/_cacache/x",)
+
+
+def test_summarize_relocation_from_yaml_tolerates_missing_and_malformed() -> None:
+    assert summarize_relocation_from_yaml({}).total == 0
+    assert summarize_relocation_from_yaml({"in_container_writes": None}).total == 0
+    # A record missing the candidate key defaults to "unknown" (flagged).
+    summary = summarize_relocation_from_yaml(
+        {"in_container_writes": [{"path": "/x", "change": "added"}, "garbage"]})
+    assert summary.unknown == ("/x",)

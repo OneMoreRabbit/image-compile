@@ -91,6 +91,60 @@ def classify_relocation(path: str) -> RelocationCandidate:
 
 
 # ---------------------------------------------------------------------------
+# Relocation-candidate summary
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class RelocationSummary:
+    """In-container writes flagged as relocation candidates (Amendment 5):
+    "likely" paths plus "unknown" paths awaiting the architect's review.
+    Only "unlikely" (transient) writes are excluded. Truthy iff any path is
+    flagged, so callers can write `if summary:`."""
+    likely: tuple[str, ...] = ()
+    unknown: tuple[str, ...] = ()
+
+    @property
+    def total(self) -> int:
+        return len(self.likely) + len(self.unknown)
+
+    def __bool__(self) -> bool:
+        return self.total > 0
+
+    def one_line(self) -> str:
+        return (f"{self.total} in-container write(s) flagged as relocation candidates "
+                f"({len(self.likely)} likely, {len(self.unknown)} unknown)")
+
+
+def summarize_relocation_candidates(
+        records: Iterable["InContainerWriteRecord"]) -> RelocationSummary:
+    likely: list[str] = []
+    unknown: list[str] = []
+    for r in records:
+        if r.candidate_for_relocation == "likely":
+            likely.append(r.path)
+        elif r.candidate_for_relocation == "unknown":
+            unknown.append(r.path)
+    return RelocationSummary(likely=tuple(likely), unknown=tuple(unknown))
+
+
+def summarize_relocation_from_yaml(report: dict) -> RelocationSummary:
+    """Same summary, from a parsed probe-report.yml (the bundle's on-disk
+    form) — used by `verify`, which has no live ProbeReport object."""
+    likely: list[str] = []
+    unknown: list[str] = []
+    for entry in report.get("in_container_writes") or []:
+        if not isinstance(entry, dict):
+            continue
+        candidate = entry.get("candidate_for_relocation", "unknown")
+        path = entry.get("path", "<unknown path>")
+        if candidate == "likely":
+            likely.append(path)
+        elif candidate == "unknown":
+            unknown.append(path)
+    return RelocationSummary(likely=tuple(likely), unknown=tuple(unknown))
+
+
+# ---------------------------------------------------------------------------
 # Surface partitioning
 # ---------------------------------------------------------------------------
 

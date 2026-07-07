@@ -21,6 +21,7 @@ from . import exit_codes
 from .config import Config
 from .docker_cli import DockerCLI
 from .inventory import build_image_record, load_matrix_for_root
+from .probe_report import RelocationSummary, summarize_relocation_from_yaml
 
 
 @dataclass
@@ -47,6 +48,19 @@ def run_verify_verb(cfg: Config, opts: VerifyOptions, *,
         matrix=matrix, docker=docker, check_ghcr=opts.require_ghcr,
     )
 
+    # Relocation candidates recorded by the probe (informational — never fails
+    # verify, but must be visible rather than buried in probe-report.yml).
+    reloc: RelocationSummary | None = None
+    if rec.bundle.layout.probe_report.is_file():
+        import yaml
+        try:
+            report = yaml.safe_load(
+                rec.bundle.layout.probe_report.read_text(encoding="utf-8"))
+            if isinstance(report, dict):
+                reloc = summarize_relocation_from_yaml(report)
+        except (yaml.YAMLError, OSError):
+            reloc = None
+
     if opts.json_output:
         import json
         payload = {
@@ -58,6 +72,11 @@ def run_verify_verb(cfg: Config, opts: VerifyOptions, *,
             "matrix": rec.matrix.check,
             "matrix_tested_at": rec.matrix.tested_at,
             "ghcr": rec.ghcr.check,
+            "relocation_candidates": (
+                None if reloc is None else
+                {"likely": list(reloc.likely), "unknown": list(reloc.unknown),
+                 "total": reloc.total}
+            ),
             "consistent": rec.consistent,
             "issues": rec.issues,
         }
@@ -72,6 +91,13 @@ def run_verify_verb(cfg: Config, opts: VerifyOptions, *,
                          if rec.matrix.tested_at else ""))
         console.print(f"  ghcr:   {rec.ghcr.check}"
                       + (f"  — {rec.ghcr.detail}" if rec.ghcr.detail else ""))
+        if reloc is None:
+            console.print("  reloc:  [dim]no probe report[/dim]")
+        elif reloc:
+            console.print(f"  reloc:  [yellow]⚠ {reloc.one_line()} "
+                          f"— see probe-report.yml[/yellow]")
+        else:
+            console.print("  reloc:  none flagged")
 
     # Decide exit code
     if rec.bundle.check != "ok":

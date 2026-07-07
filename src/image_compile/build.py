@@ -34,6 +34,7 @@ from .docker_cli import DockerCLI, DockerError
 from .matrix import load_matrix, self_blessed_entry, upsert_entry, write_matrix
 from .preflight import PreflightError, run_preflight
 from .probe import ProbeError, run_probe
+from .probe_report import summarize_relocation_candidates
 from .registry_paths import archive_existing_bundle, ensure_bundle_dir
 
 
@@ -194,6 +195,17 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
 
     console.print(f"[green]probe ok[/green] (result={probe_outcome.report.result})")
 
+    # Relocation candidates must not stay buried in probe-report.yml: a green
+    # build with unrelocated persistent writes (e.g. the 2026.6.x sqlite state)
+    # is how agent state silently dies on container recreate.
+    reloc = summarize_relocation_candidates(probe_outcome.report.in_container_writes)
+    if reloc:
+        console.print(f"[yellow]⚠ {reloc.one_line()} — see probe-report.yml[/yellow]")
+        for path in reloc.likely[:10]:
+            console.print(f"    [yellow]likely[/yellow]   {path}")
+        if len(reloc.likely) > 10:
+            console.print(f"    [dim]… +{len(reloc.likely) - 10} more likely paths[/dim]")
+
     # ----- Bundle assembly ---------------------------------------------
     if probe_outcome.captured_openclaw_json is None:
         err_console.print("[red]probe produced no captured openclaw.json[/red] — cannot assemble bundle")
@@ -271,6 +283,14 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
             verb = "updated" if replaced else "appended"
             console.print(f"[green]matrix[/green] {verb} self-blessed entry for "
                           f"{plan.flavour.name}:{plan.image_version}")
+            # Warn, don't fail: the operator may knowingly accept these paths
+            # as ephemeral, but the blessing must never happen silently.
+            if reloc:
+                console.print(
+                    f"[yellow]⚠ blessed with {reloc.total} relocation candidate(s) "
+                    f"outstanding[/yellow] — review probe-report.yml; relocate in the "
+                    f"wrapper or accept the paths as ephemeral"
+                )
         except (OSError, ValueError) as e:
             err_console.print(f"[red]matrix write failed:[/red] {e}")
             return exit_codes.REGISTRY_WRITE_FAILED
@@ -284,4 +304,6 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
     elif opts.no_push:
         console.print(f"  ghcr:   skipped (--no-push)")
     console.print(f"  matrix: {plan.bundle_layout.matrix_file}")
+    if reloc:
+        console.print(f"  [yellow]reloc:  ⚠ {reloc.total} candidate(s) outstanding — see probe-report.yml[/yellow]")
     return exit_codes.OK
