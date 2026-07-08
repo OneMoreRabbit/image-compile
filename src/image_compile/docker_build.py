@@ -21,6 +21,7 @@ class BuildPlan:
     wrapper_head_sha: str | None
     upstream_version: str                   # v2026.5.5 (label-only, retains prefix)
     extra_labels: dict[str, str] | None = None
+    baked_plugins: tuple[str, ...] = ()     # PINNED specs (@openclaw/whatsapp@2026.6.11)
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,8 @@ def _construct_argv(plan: BuildPlan, *, source: str) -> list[str]:
     }
     if plan.wrapper_head_sha:
         labels["org.opencontainers.image.revision"] = plan.wrapper_head_sha
+    if plan.baked_plugins:
+        labels["org.arcpower.openclaw.baked-plugins"] = ",".join(plan.baked_plugins)
     if plan.extra_labels:
         labels.update(plan.extra_labels)
 
@@ -54,6 +57,8 @@ def _construct_argv(plan: BuildPlan, *, source: str) -> list[str]:
         "--platform", "linux/amd64",
         "--load",
     ]
+    if plan.baked_plugins:
+        argv += ["--build-arg", f"BAKED_PLUGINS={' '.join(plan.baked_plugins)}"]
     for k, v in labels.items():
         argv += ["--label", f"{k}={v}"]
     argv.append(str(plan.wrapper_repo))

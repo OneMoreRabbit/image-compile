@@ -55,6 +55,7 @@ class BundleMetadata:
     built_by: str
     built_on: str
     notes: str = ""
+    baked_plugins: tuple[str, ...] = ()      # pinned specs baked into the image
 
     def to_yaml_dict(self) -> dict:
         return {
@@ -68,6 +69,7 @@ class BundleMetadata:
             "build_date": self.build_date.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "built_by": self.built_by,
             "built_on": self.built_on,
+            "baked_plugins": list(self.baked_plugins),
             "notes": self.notes,
         }
 
@@ -204,7 +206,8 @@ def write_bundle(layout: BundleLayout, flavour: FlavourConfig, *,
 def build_metadata(*, image_tag: str, image_version: str, flavour_name: str,
                    upstream_version: str, wrapper_rev: str,
                    wrapper_repo_head: str | None, build_date: datetime,
-                   built_by: str, built_on: str, notes: str = "") -> BundleMetadata:
+                   built_by: str, built_on: str, notes: str = "",
+                   baked_plugins: tuple[str, ...] = ()) -> BundleMetadata:
     return BundleMetadata(
         image_tag=image_tag,
         image_version=image_version,
@@ -217,4 +220,5 @@ def build_metadata(*, image_tag: str, image_version: str, flavour_name: str,
         built_by=built_by,
         built_on=built_on,
         notes=notes,
+        baked_plugins=baked_plugins,
     )

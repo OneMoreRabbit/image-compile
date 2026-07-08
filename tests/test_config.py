@@ -51,6 +51,45 @@ def minimal_config(tmp_path: Path) -> Path:
 # Happy path
 # ---------------------------------------------------------------------------
 
+def test_baked_plugins_default_empty(minimal_config: Path) -> None:
+    f = load_config(minimal_config).flavours["openclaw"]
+    assert f.baked_plugins == ()
+    assert f.baked_plugin_paths == ()
+
+
+def test_baked_plugins_parse_and_paths(tmp_path: Path) -> None:
+    cfg_text = MINIMAL_OPENCLAW + """
+"""
+    cfg_text = cfg_text.replace(
+        "    workspace_templates_dir: openclaw/blank-workspace",
+        "    workspace_templates_dir: openclaw/blank-workspace\n"
+        "    baked_plugins:\n"
+        "      - \"@openclaw/whatsapp\"\n"
+        "      - \"@openclaw/brave-plugin\"\n",
+    )
+    p = tmp_path / "config.yml"
+    p.write_text(cfg_text, encoding="utf-8")
+    f = load_config(p).flavours["openclaw"]
+    assert f.baked_plugins == ("@openclaw/whatsapp", "@openclaw/brave-plugin")
+    # id rule: basename after scope, minus -plugin suffix
+    assert f.baked_plugin_paths == (
+        "/opt/openclaw-plugins/whatsapp",
+        "/opt/openclaw-plugins/brave",
+    )
+
+
+def test_baked_plugins_reject_pinned_specs(tmp_path: Path) -> None:
+    cfg_text = MINIMAL_OPENCLAW.replace(
+        "    workspace_templates_dir: openclaw/blank-workspace",
+        "    workspace_templates_dir: openclaw/blank-workspace\n"
+        "    baked_plugins: [\"@openclaw/whatsapp@2026.6.11\"]\n",
+    )
+    p = tmp_path / "config.yml"
+    p.write_text(cfg_text, encoding="utf-8")
+    with pytest.raises(ConfigError, match="carries a version"):
+        load_config(p)
+
+
 def test_loads_minimal_config(minimal_config: Path) -> None:
     cfg = load_config(minimal_config)
     assert cfg.ghcr.org == "arcpower"

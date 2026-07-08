@@ -42,6 +42,18 @@ flavours:
       default_port: 18789
     workspace_templates_dir: openclaw/blank-workspace
     required_wrapper_files: [Dockerfile, entrypoint.sh]
+    # Plugins baked into the image at build time (wrapper r7+). Bare npm
+    # package names — the build pins each to the upstream version (lockstep
+    # releases). Baked ≠ enabled: inert until per-agent config enables them.
+    # Decided set 2026-07-08. Catalogue notes: no groq package exists (stock
+    # deepgram is the transcription fallback); slack/msteams/line/feishu
+    # external plugins exist for future org agents — listed here only when an
+    # agent needs them.
+    baked_plugins:
+      - "@openclaw/whatsapp"
+      - "@openclaw/discord"
+      - "@openclaw/brave-plugin"
+      - "@openclaw/perplexity-plugin"
 
   nanoclaw:
     image_line: nanoclaw-runtime                      # → ghcr.io/<org>/nanoclaw-runtime

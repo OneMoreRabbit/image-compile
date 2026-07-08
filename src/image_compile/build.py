@@ -110,6 +110,15 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
     console.print(f"  wrapper repo: {plan.wrapper_repo} (HEAD: {plan.wrapper_head_sha or 'unknown'})")
     console.print(f"  bundle dir:   {plan.bundle_layout.bundle_dir}")
 
+    # Baked plugins: flavour config lists bare package names; each is pinned
+    # to the upstream version here (lockstep releases — the wrapper Dockerfile
+    # rejects unpinned specs).
+    baked_specs = tuple(
+        f"{pkg}@{plan.upstream_version_no_prefix}" for pkg in plan.flavour.baked_plugins
+    )
+    if baked_specs:
+        console.print(f"  baked plugins: {', '.join(baked_specs)}")
+
     # ----- Archive existing bundle on --force ---------------------------
     if opts.force and plan.bundle_layout.exists():
         archived = archive_existing_bundle(plan.bundle_layout, cfg.registry.archive_root)
@@ -124,6 +133,7 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
             wrapper_repo=plan.wrapper_repo,
             wrapper_head_sha=plan.wrapper_head_sha,
             upstream_version=plan.upstream_version,
+            baked_plugins=baked_specs,
         ))
         console.print("[yellow]--dry-run[/yellow] — would run:")
         console.print("  " + " ".join(argv))
@@ -137,6 +147,7 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
         wrapper_repo=plan.wrapper_repo,
         wrapper_head_sha=plan.wrapper_head_sha,
         upstream_version=plan.upstream_version,
+        baked_plugins=baked_specs,
     )
     console.print(f"[bold]building[/bold] {plan.image_tag}")
     build_started = time.monotonic()
@@ -225,6 +236,7 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
         build_date=datetime.now(timezone.utc),
         built_by=getpass.getuser(),
         built_on=socket.gethostname(),
+        baked_plugins=baked_specs,
     )
 
     try:
@@ -273,10 +285,14 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
     if pushed or opts.no_push:
         try:
             mtx = load_matrix(plan.bundle_layout.matrix_file)
+            matrix_notes = "Auto-blessed: image defaults against own image."
+            if baked_specs:
+                matrix_notes += f" Baked plugins: {', '.join(baked_specs)}."
             entry = self_blessed_entry(
                 flavour=plan.flavour.name,
                 image_version=plan.image_version,
                 tested_at=datetime.now(timezone.utc),
+                notes=matrix_notes,
             )
             replaced = upsert_entry(mtx, entry)
             write_matrix(plan.bundle_layout.matrix_file, mtx)

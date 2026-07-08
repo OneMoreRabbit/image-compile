@@ -108,6 +108,11 @@ def render_stub_files(setup: ProbeSetup) -> None:
         OPENCLAW_PORT=setup.flavour.probe.default_port,
         image_compile_version=TOOL_VERSION,
         build_date=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        # Baked-plugin discovery: the stub carries plugins.load.paths so the
+        # captured defaults bundle hands every compiled agent the same paths.
+        # Baked ≠ enabled — nothing is enabled here; the probe verifies boot
+        # stays green with plugins present-but-unconfigured.
+        baked_plugin_paths=list(setup.flavour.baked_plugin_paths),
     )
     (setup.configs_dir / "main" / "openclaw.json").write_text(rendered_config, encoding="utf-8")
 

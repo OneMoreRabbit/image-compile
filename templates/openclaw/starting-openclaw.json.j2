@@ -9,6 +9,13 @@
     "lastRunVersion": "image-compile-probe",
     "lastRunMode": "local"
   },
+{%- if baked_plugin_paths %}
+  "plugins": {
+    "load": {
+      "paths": [{% for p in baked_plugin_paths %}"{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+    }
+  },
+{%- endif %}
   "gateway": {
     "mode": "local",
     "bind": "{{ OPENCLAW_BIND | default('lan') }}",

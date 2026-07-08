@@ -92,6 +92,17 @@ class ProbeConfig:
     default_port: int
 
 
+BAKED_PLUGINS_IMAGE_ROOT = "/opt/openclaw-plugins"
+
+
+def plugin_id(package: str) -> str:
+    """Derive a plugin id from its npm package name, mirroring the wrapper
+    Dockerfile's rule: basename after any scope, minus a `-plugin` suffix.
+    `@openclaw/brave-plugin` → `brave`; `@openclaw/whatsapp` → `whatsapp`."""
+    base = package.rsplit("/", 1)[-1]
+    return base[: -len("-plugin")] if base.endswith("-plugin") else base
+
+
 @dataclass(frozen=True)
 class FlavourConfig:
     name: str
@@ -101,6 +112,14 @@ class FlavourConfig:
     probe: ProbeConfig
     workspace_templates_dir: Path                   # relative to package templates root
     required_wrapper_files: tuple[str, ...] = ("Dockerfile", "entrypoint.sh")
+    baked_plugins: tuple[str, ...] = ()             # npm package names, UNpinned; the
+                                                    # build pins each to the upstream
+                                                    # version (lockstep releases)
+
+    @property
+    def baked_plugin_paths(self) -> tuple[str, ...]:
+        """In-image project dirs the runtime's plugins.load.paths should scan."""
+        return tuple(f"{BAKED_PLUGINS_IMAGE_ROOT}/{plugin_id(p)}" for p in self.baked_plugins)
 
 
 @dataclass(frozen=True)
@@ -194,6 +213,15 @@ def _parse_probe(raw: dict[str, Any], flavour_name: str) -> ProbeConfig:
 
 def _parse_flavour(name: str, raw: dict[str, Any]) -> FlavourConfig:
     _require_keys(raw, _REQUIRED_FLAVOUR, f"flavours.{name}")
+    baked_raw = raw.get("baked_plugins", []) or []
+    if not isinstance(baked_raw, list) or not all(isinstance(p, str) and p for p in baked_raw):
+        raise ConfigError(f"flavours.{name}.baked_plugins: must be a list of npm package names")
+    for pkg in baked_raw:
+        if "@" in pkg.lstrip("@"):
+            raise ConfigError(
+                f"flavours.{name}.baked_plugins: {pkg!r} carries a version — list bare "
+                f"package names; the build pins each to the upstream version"
+            )
     return FlavourConfig(
         name=name,
         image_line=raw["image_line"],
@@ -202,6 +230,7 @@ def _parse_flavour(name: str, raw: dict[str, Any]) -> FlavourConfig:
         probe=_parse_probe(raw["probe"], name),
         workspace_templates_dir=Path(raw["workspace_templates_dir"]),
         required_wrapper_files=tuple(raw.get("required_wrapper_files", ("Dockerfile", "entrypoint.sh"))),
+        baked_plugins=tuple(baked_raw),
     )
 
 
