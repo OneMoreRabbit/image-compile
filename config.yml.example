@@ -42,9 +42,13 @@ flavours:
       default_port: 18789
     workspace_templates_dir: openclaw/blank-workspace
     required_wrapper_files: [Dockerfile, entrypoint.sh]
-    # Plugins baked into the image at build time (wrapper r7+). Bare npm
-    # package names — the build pins each to the upstream version (lockstep
-    # releases). Baked ≠ enabled: inert until per-agent config enables them.
+    # Plugins baked into the image at build time (wrapper r7+). Baking is
+    # the ONLY supported install path — runtime `plugins install` is not
+    # used on this platform (NFS state dir: staging-move failure / 120s
+    # extract timeout). Bare npm package names — the build pins each to the
+    # upstream version (lockstep releases). Baked ≠ enabled: inert until
+    # per-agent config enables them. To add a plugin: extend this list,
+    # rebuild with a bumped --wrapper-rev.
     # Decided set 2026-07-08. Catalogue notes: no groq package exists (stock
     # deepgram is the transcription fallback); slack/msteams/line/feishu
     # external plugins exist for future org agents — listed here only when an
