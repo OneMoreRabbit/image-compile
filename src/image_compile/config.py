@@ -118,8 +118,17 @@ class FlavourConfig:
 
     @property
     def baked_plugin_paths(self) -> tuple[str, ...]:
-        """In-image project dirs the runtime's plugins.load.paths should scan."""
-        return tuple(f"{BAKED_PLUGINS_IMAGE_ROOT}/{plugin_id(p)}" for p in self.baked_plugins)
+        """In-image paths for the runtime's plugins.load.paths.
+
+        The loader does NOT scan npm project directories — it wants the
+        PACKAGE dir inside node_modules (verified live against 2026.6.11-r7:
+        project-dir paths left brave undiscovered; the runtime's own
+        installer registers `…/node_modules/@openclaw/<pkg>/…`). See the r7
+        brief's evening addendum."""
+        return tuple(
+            f"{BAKED_PLUGINS_IMAGE_ROOT}/{plugin_id(p)}/node_modules/{p}"
+            for p in self.baked_plugins
+        )
 
 
 @dataclass(frozen=True)

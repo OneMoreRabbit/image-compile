@@ -71,10 +71,12 @@ def test_baked_plugins_parse_and_paths(tmp_path: Path) -> None:
     p.write_text(cfg_text, encoding="utf-8")
     f = load_config(p).flavours["openclaw"]
     assert f.baked_plugins == ("@openclaw/whatsapp", "@openclaw/brave-plugin")
-    # id rule: basename after scope, minus -plugin suffix
+    # id rule: basename after scope, minus -plugin suffix; paths point at the
+    # PACKAGE dir inside node_modules (r7 brief evening addendum — the loader
+    # does not scan project dirs)
     assert f.baked_plugin_paths == (
-        "/opt/openclaw-plugins/whatsapp",
-        "/opt/openclaw-plugins/brave",
+        "/opt/openclaw-plugins/whatsapp/node_modules/@openclaw/whatsapp",
+        "/opt/openclaw-plugins/brave/node_modules/@openclaw/brave-plugin",
     )
 
 

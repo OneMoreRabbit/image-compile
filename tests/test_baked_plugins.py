@@ -80,10 +80,12 @@ def _render_stub(baked_plugin_paths: list[str]) -> dict:
 
 
 def test_stub_template_carries_plugin_load_paths() -> None:
-    cfg = _render_stub(["/opt/openclaw-plugins/whatsapp", "/opt/openclaw-plugins/brave"])
-    assert cfg["plugins"]["load"]["paths"] == [
-        "/opt/openclaw-plugins/whatsapp", "/opt/openclaw-plugins/brave",
+    paths = [
+        "/opt/openclaw-plugins/whatsapp/node_modules/@openclaw/whatsapp",
+        "/opt/openclaw-plugins/brave/node_modules/@openclaw/brave-plugin",
     ]
+    cfg = _render_stub(paths)
+    assert cfg["plugins"]["load"]["paths"] == paths
 
 
 def test_stub_template_omits_plugins_block_when_empty() -> None:
