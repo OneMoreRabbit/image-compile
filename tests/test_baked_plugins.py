@@ -1,5 +1,6 @@
-"""Tests for the r7 baked-plugins path: build argv, bundle metadata, and the
-probe stub template carrying plugins.load.paths."""
+"""Tests for the baked-plugins path (r8 bundled model): build argv, bundle
+metadata, the stub template emitting NO plugin config, and the probe's
+stock-root assertion."""
 from __future__ import annotations
 
 import json
@@ -11,6 +12,7 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from image_compile.bundle import build_metadata
 from image_compile.config import plugin_id
 from image_compile.docker_build import BuildPlan, _construct_argv
+from image_compile.probe import missing_bundled_plugins
 
 TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "templates"
 
@@ -62,7 +64,10 @@ def test_metadata_records_baked_plugins() -> None:
     assert d["baked_plugins"] == ["@openclaw/whatsapp@2026.6.11"]
 
 
-def _render_stub(baked_plugin_paths: list[str]) -> dict:
+def test_stub_template_emits_no_plugin_config() -> None:
+    """r8: bundled plugins need no discovery config — the stub must not
+    contain a plugins block at all (stale load.paths caused the r7
+    duplicate-discovery warning)."""
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATES_ROOT)),
         keep_trailing_newline=True,
@@ -73,21 +78,21 @@ def _render_stub(baked_plugin_paths: list[str]) -> dict:
         OPENCLAW_BIND="lan",
         OPENCLAW_PORT=18789,
         image_compile_version="0.0.0",
-        build_date="2026-07-08T00:00:00Z",
-        baked_plugin_paths=baked_plugin_paths,
+        build_date="2026-07-09T00:00:00Z",
     )
-    return json.loads(rendered)          # must be valid JSON either way
-
-
-def test_stub_template_carries_plugin_load_paths() -> None:
-    paths = [
-        "/opt/openclaw-plugins/whatsapp/node_modules/@openclaw/whatsapp",
-        "/opt/openclaw-plugins/brave/node_modules/@openclaw/brave-plugin",
-    ]
-    cfg = _render_stub(paths)
-    assert cfg["plugins"]["load"]["paths"] == paths
-
-
-def test_stub_template_omits_plugins_block_when_empty() -> None:
-    cfg = _render_stub([])
+    cfg = json.loads(rendered)           # must be valid JSON
     assert "plugins" not in cfg
+
+
+def test_missing_bundled_plugins_detects_absent_ids() -> None:
+    listing = (
+        "plugins:\n"
+        "  whatsapp   stock:whatsapp/index.js   disabled\n"
+        "  brave      stock:brave/index.js      disabled\n"
+        "  telegram   stock:telegram/index.js   enabled\n"
+    )
+    assert missing_bundled_plugins(listing, ["whatsapp", "brave"]) == []
+    assert missing_bundled_plugins(listing, ["whatsapp", "discord"]) == ["discord"]
+    # a plugin visible from a NON-stock root does not count as bundled
+    external = "  discord   /agent/configs/main/npm/projects/x/index.js  disabled\n"
+    assert missing_bundled_plugins(listing + external, ["discord"]) == ["discord"]

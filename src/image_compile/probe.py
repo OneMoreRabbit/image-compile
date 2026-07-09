@@ -22,7 +22,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 import requests
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
@@ -108,11 +108,9 @@ def render_stub_files(setup: ProbeSetup) -> None:
         OPENCLAW_PORT=setup.flavour.probe.default_port,
         image_compile_version=TOOL_VERSION,
         build_date=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        # Baked-plugin discovery: the stub carries plugins.load.paths so the
-        # captured defaults bundle hands every compiled agent the same paths.
-        # Baked ≠ enabled — nothing is enabled here; the probe verifies boot
-        # stays green with plugins present-but-unconfigured.
-        baked_plugin_paths=list(setup.flavour.baked_plugin_paths),
+        # r8: no plugin discovery config — baked plugins are BUNDLED stock
+        # extensions the runtime finds on its own. The probe instead asserts
+        # they appear under the stock source root (verify_bundled_plugins).
     )
     (setup.configs_dir / "main" / "openclaw.json").write_text(rendered_config, encoding="utf-8")
 
@@ -194,6 +192,62 @@ def check_readyz(setup: ProbeSetup) -> HealthCheck:
     """One-shot HTTP readiness probe."""
     url = f"http://127.0.0.1:{setup.published_port}{setup.flavour.probe.ready_endpoint}"
     return _http_health(url)
+
+
+# The wrapper's r6 contract: OPENCLAW_STATE_DIR points at the configs
+# surface. `docker exec` does not inherit entrypoint-exported vars, so the
+# CLI invocation must set it explicitly or it derives state from $HOME.
+EXEC_STATE_DIR = "/agent/configs/main"
+
+DUPLICATE_PLUGIN_MARKER = "duplicate plugin id"
+
+
+def missing_bundled_plugins(plugins_list_output: str,
+                            plugin_ids: Iterable[str]) -> list[str]:
+    """Return the baked plugin ids that do NOT appear under the stock source
+    root in `plugins list` output (stock plugins render as `stock:<id>/…`).
+
+    dist/extensions/ is upstream-internal, not a published interface — this
+    assertion is what turns an upstream layout change into a failed build
+    instead of a broken deployed agent (r8 brief, guard 7)."""
+    return [pid for pid in plugin_ids if f"stock:{pid}" not in plugins_list_output]
+
+
+def verify_bundled_plugins(docker: DockerCLI, setup: ProbeSetup,
+                           progress: Callable[[str], None] | None = None) -> None:
+    """Assert every baked plugin is visible as a BUNDLED (stock) extension.
+
+    Runs `openclaw plugins list` inside the probe container as the agent
+    identity. Raises ProbeError when a baked id is missing from the stock
+    source root."""
+    plugin_ids = list(setup.flavour.baked_plugin_ids)
+    if not plugin_ids:
+        return
+    try:
+        result = docker.run([
+            "exec",
+            "-u", f"{setup.agent_uid}:{setup.agent_primary_gid}",
+            "-e", f"OPENCLAW_STATE_DIR={EXEC_STATE_DIR}",
+            setup.container_name,
+            "openclaw", "plugins", "list",
+        ])
+    except DockerError as e:
+        raise ProbeError(
+            f"bundled-plugin check failed to run `plugins list` in the probe "
+            f"container:\n{e.stderr.strip() or e}",
+            exit_codes.PROBE_FAILED,
+        ) from e
+    missing = missing_bundled_plugins(result.stdout, plugin_ids)
+    if missing:
+        raise ProbeError(
+            f"baked plugin(s) not visible under the stock source root: "
+            f"{', '.join(missing)}. The upstream's dist/extensions layout has "
+            f"likely changed (it is not a published interface) — inspect "
+            f"`plugins list` in the image and adjust the wrapper bake step.",
+            exit_codes.PROBE_FAILED,
+        )
+    if progress:
+        progress(f"bundled plugins verified under stock root: {', '.join(plugin_ids)}")
 
 
 def capture_diff(docker: DockerCLI, setup: ProbeSetup) -> str:
@@ -374,6 +428,8 @@ def run_probe(flavour: FlavourConfig, image_tag: str, image_version: str,
         readyz = check_readyz(setup)
         progress(f"readyz: status={readyz.status}")
 
+        verify_bundled_plugins(docker, setup, progress=progress)
+
         diff_output = capture_diff(docker, setup)
         progress(f"docker diff: {diff_output.count(chr(10))} change lines")
 
@@ -387,6 +443,15 @@ def run_probe(flavour: FlavourConfig, image_tag: str, image_version: str,
 
     finally:
         container_logs = stop_probe_container(docker, setup)
+
+    # r8 acceptance: bundled loading must not double-discover anything.
+    if setup.flavour.baked_plugin_ids and DUPLICATE_PLUGIN_MARKER in container_logs:
+        raise ProbeError(
+            f"container logs contain {DUPLICATE_PLUGIN_MARKER!r} — a baked "
+            f"plugin is being discovered twice (stale plugins.load.paths or "
+            f"plugins.installs entry in the stub/surface config?)",
+            exit_codes.PROBE_FAILED,
+        )
 
     duration = time.monotonic() - started_at
     report = assemble_report(

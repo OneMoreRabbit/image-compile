@@ -54,7 +54,7 @@ def minimal_config(tmp_path: Path) -> Path:
 def test_baked_plugins_default_empty(minimal_config: Path) -> None:
     f = load_config(minimal_config).flavours["openclaw"]
     assert f.baked_plugins == ()
-    assert f.baked_plugin_paths == ()
+    assert f.baked_plugin_ids == ()
 
 
 def test_baked_plugins_parse_and_paths(tmp_path: Path) -> None:
@@ -71,13 +71,9 @@ def test_baked_plugins_parse_and_paths(tmp_path: Path) -> None:
     p.write_text(cfg_text, encoding="utf-8")
     f = load_config(p).flavours["openclaw"]
     assert f.baked_plugins == ("@openclaw/whatsapp", "@openclaw/brave-plugin")
-    # id rule: basename after scope, minus -plugin suffix; paths point at the
-    # PACKAGE dir inside node_modules (r7 brief evening addendum — the loader
-    # does not scan project dirs)
-    assert f.baked_plugin_paths == (
-        "/opt/openclaw-plugins/whatsapp/node_modules/@openclaw/whatsapp",
-        "/opt/openclaw-plugins/brave/node_modules/@openclaw/brave-plugin",
-    )
+    # id rule: basename after scope, minus -plugin suffix (r8: ids drive the
+    # probe's stock-root assertion; no path config is emitted at all)
+    assert f.baked_plugin_ids == ("whatsapp", "brave")
 
 
 def test_baked_plugins_reject_pinned_specs(tmp_path: Path) -> None:

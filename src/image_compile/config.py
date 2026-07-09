@@ -92,9 +92,6 @@ class ProbeConfig:
     default_port: int
 
 
-BAKED_PLUGINS_IMAGE_ROOT = "/opt/openclaw-plugins"
-
-
 def plugin_id(package: str) -> str:
     """Derive a plugin id from its npm package name, mirroring the wrapper
     Dockerfile's rule: basename after any scope, minus a `-plugin` suffix.
@@ -117,18 +114,12 @@ class FlavourConfig:
                                                     # version (lockstep releases)
 
     @property
-    def baked_plugin_paths(self) -> tuple[str, ...]:
-        """In-image paths for the runtime's plugins.load.paths.
-
-        The loader does NOT scan npm project directories — it wants the
-        PACKAGE dir inside node_modules (verified live against 2026.6.11-r7:
-        project-dir paths left brave undiscovered; the runtime's own
-        installer registers `…/node_modules/@openclaw/<pkg>/…`). See the r7
-        brief's evening addendum."""
-        return tuple(
-            f"{BAKED_PLUGINS_IMAGE_ROOT}/{plugin_id(p)}/node_modules/{p}"
-            for p in self.baked_plugins
-        )
+    def baked_plugin_ids(self) -> tuple[str, ...]:
+        """Runtime plugin ids for the baked set. r8: plugins bake as BUNDLED
+        stock extensions (`dist/extensions/<id>/`), so no path config is
+        emitted at all — the ids exist for the probe's layout assertion
+        (each must appear under the stock source root in `plugins list`)."""
+        return tuple(plugin_id(p) for p in self.baked_plugins)
 
 
 @dataclass(frozen=True)
