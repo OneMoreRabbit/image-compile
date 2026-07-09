@@ -80,13 +80,18 @@ class BundleMetadata:
 
 def scrub_openclaw_config(captured: dict, *,
                           stub_secrets: dict[str, str] | None = None,
-                          probe_identity: str = PROBE_IDENTITY_VALUE) -> dict:
+                          probe_identity: str = PROBE_IDENTITY_VALUE,
+                          drop_channels: tuple[str, ...] = ()) -> dict:
     """Return a scrubbed copy of the captured openclaw.json.
 
     - Any string whose value matches a known stub-secret token is replaced
       with a SecretRef object: {"source": "env", "id": "<NAME>"}.
     - Any string equal to the probe identity ("probe") is dropped (key kept,
       value set to empty string) so the defaults don't carry that name.
+    - `drop_channels` entries are removed from `channels` wholesale: the
+      probe injects `channels.<id>.enabled: true` for the channel-start
+      check (guard 8), and a channel enabled in image defaults would enable
+      it for every compiled agent.
     - Output keys are sorted (handled by the caller during JSON dump).
     """
     stub_secrets = stub_secrets if stub_secrets is not None else DEFAULT_STUB_SECRETS
@@ -104,7 +109,14 @@ def scrub_openclaw_config(captured: dict, *,
             return node
         return node
 
-    return _walk(deepcopy(captured))
+    scrubbed = _walk(deepcopy(captured))
+    channels = scrubbed.get("channels")
+    if isinstance(channels, dict):
+        for cid in drop_channels:
+            channels.pop(cid, None)
+        if not channels:
+            scrubbed.pop("channels", None)
+    return scrubbed
 
 
 def dump_openclaw_config(scrubbed: dict) -> str:
@@ -170,8 +182,10 @@ def write_bundle(layout: BundleLayout, flavour: FlavourConfig, *,
     """
     written: list[Path] = []
 
-    # openclaw.json (scrubbed)
-    scrubbed = scrub_openclaw_config(captured_openclaw_json)
+    # openclaw.json (scrubbed; the guard-8 probe-injected channel must not
+    # become an image default)
+    drop = (flavour.probe.channel_start_check,) if flavour.probe.channel_start_check else ()
+    scrubbed = scrub_openclaw_config(captured_openclaw_json, drop_channels=drop)
     layout.bundle_dir.mkdir(parents=True, exist_ok=True)
     layout.config_file.write_text(dump_openclaw_config(scrubbed), encoding="utf-8")
     written.append(layout.config_file)

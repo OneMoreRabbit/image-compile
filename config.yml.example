@@ -40,6 +40,11 @@ flavours:
       ready_endpoint: /readyz
       port_env_var: OPENCLAW_PORT
       default_port: 18789
+      # Guard 8 (r8.1): the probe stub enables this channel so the boot
+      # exercises channel start (where plugin submodules load). Asserts
+      # LOAD success only — never connectivity. The injected block is
+      # scrubbed from the captured bundle config.
+      channel_start_check: whatsapp
     workspace_templates_dir: openclaw/blank-workspace
     required_wrapper_files: [Dockerfile, entrypoint.sh]
     # Plugins baked into the image at build time (wrapper r7+). Baking is

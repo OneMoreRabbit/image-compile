@@ -9,6 +9,13 @@
     "lastRunVersion": "image-compile-probe",
     "lastRunMode": "local"
   },
+{%- if channel_start_check %}
+  "channels": {
+    "{{ channel_start_check }}": {
+      "enabled": true
+    }
+  },
+{%- endif %}
   "gateway": {
     "mode": "local",
     "bind": "{{ OPENCLAW_BIND | default('lan') }}",
