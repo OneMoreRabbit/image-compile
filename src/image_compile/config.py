@@ -90,6 +90,11 @@ class ProbeConfig:
     ready_endpoint: str
     port_env_var: str
     default_port: int
+    # Guard 8 (r8.1): channel id the probe stub enables so the boot exercises
+    # channel start — plugin submodule loads only happen on that path. The
+    # probe asserts plugin LOAD success (log markers), never connectivity
+    # (stub creds cannot connect). None disables the check.
+    channel_start_check: str | None = None
 
 
 def plugin_id(package: str) -> str:
@@ -208,6 +213,7 @@ def _parse_probe(raw: dict[str, Any], flavour_name: str) -> ProbeConfig:
         ready_endpoint=raw.get("ready_endpoint", "/readyz"),
         port_env_var=raw["port_env_var"],
         default_port=int(raw["default_port"]),
+        channel_start_check=raw.get("channel_start_check"),
     )
 
 

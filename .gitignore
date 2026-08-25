@@ -11,3 +11,7 @@ build/
 *.egg-info/
 .last-failed/
 config.yml
+# --- Atlas ---
+.atlas/
+.atlas-method/
+ATLAS-CONTEXT.md

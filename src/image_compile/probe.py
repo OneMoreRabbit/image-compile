@@ -111,6 +111,10 @@ def render_stub_files(setup: ProbeSetup) -> None:
         # r8: no plugin discovery config — baked plugins are BUNDLED stock
         # extensions the runtime finds on its own. The probe instead asserts
         # they appear under the stock source root (verify_bundled_plugins).
+        # r8.1 guard 8: enabling one channel makes the boot exercise channel
+        # start, where plugin submodule loads actually happen; the injected
+        # block is scrubbed from the captured bundle config.
+        channel_start_check=setup.flavour.probe.channel_start_check,
     )
     (setup.configs_dir / "main" / "openclaw.json").write_text(rendered_config, encoding="utf-8")
 
@@ -200,6 +204,24 @@ def check_readyz(setup: ProbeSetup) -> HealthCheck:
 EXEC_STATE_DIR = "/agent/configs/main"
 
 DUPLICATE_PLUGIN_MARKER = "duplicate plugin id"
+
+# Guard 8 (r8.1): markers of a plugin failing to LOAD (not to connect —
+# stub creds can never connect, and connectivity is out of probe scope).
+# Discovery-level checks passed while channel start failed on r8; these
+# markers only appear once a channel-enabled boot exercises that path.
+PLUGIN_LOAD_ERROR_MARKERS = (
+    "pushPluginLoadError",
+    "escapes plugin root",
+    "fails alias checks",
+)
+
+
+def find_plugin_load_errors(container_logs: str) -> list[str]:
+    """Return log lines indicating a plugin failed to load."""
+    return [
+        line for line in container_logs.splitlines()
+        if any(marker in line for marker in PLUGIN_LOAD_ERROR_MARKERS)
+    ]
 
 
 def missing_bundled_plugins(plugins_list_output: str,
@@ -450,6 +472,19 @@ def run_probe(flavour: FlavourConfig, image_tag: str, image_version: str,
             f"container logs contain {DUPLICATE_PLUGIN_MARKER!r} — a baked "
             f"plugin is being discovered twice (stale plugins.load.paths or "
             f"plugins.installs entry in the stub/surface config?)",
+            exit_codes.PROBE_FAILED,
+        )
+
+    # Guard 8 (r8.1): a channel-enabled boot exercises channel start; any
+    # plugin LOAD failure in the logs fails the build.
+    load_errors = find_plugin_load_errors(container_logs)
+    if load_errors:
+        detail = "\n".join(f"  {line}" for line in load_errors[:5])
+        raise ProbeError(
+            f"plugin load error(s) in container logs (channel-start check):\n"
+            f"{detail}\n"
+            f"A baked plugin's manifest specifiers do not resolve in the "
+            f"image — inspect the bake normalisation step.",
             exit_codes.PROBE_FAILED,
         )
 
