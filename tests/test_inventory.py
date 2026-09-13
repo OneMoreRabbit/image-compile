@@ -44,7 +44,7 @@ def _flavour(name: str = "openclaw") -> FlavourConfig:
 
 def _cfg(tmp_path: Path, flavours: dict[str, FlavourConfig]) -> Config:
     return Config(
-        ghcr=GhcrConfig(org="arcpower"),
+        ghcr=GhcrConfig(org="onemorerabbit"),
         registry=RegistryConfig(root=tmp_path, archive_root=tmp_path / ".archive"),
         flavours=flavours,
     )
@@ -198,7 +198,7 @@ def test_build_image_record_consistent(tmp_path: Path) -> None:
                              matrix=reloaded, docker=docker, check_ghcr=True)
     assert rec.consistent is True
     assert rec.issues == []
-    assert rec.image_tag == "ghcr.io/arcpower/openclaw-runtime:2026.5.5-r1"
+    assert rec.image_tag == "ghcr.io/onemorerabbit/openclaw-runtime:2026.5.5-r1"
 
 
 def test_build_image_record_missing_bundle(tmp_path: Path) -> None:

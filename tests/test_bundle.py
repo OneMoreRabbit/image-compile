@@ -148,7 +148,7 @@ def test_build_metadata_yaml_dict_is_complete() -> None:
     from datetime import datetime, timezone
 
     md = build_metadata(
-        image_tag="ghcr.io/arcpower/openclaw-runtime:2026.5.5-r1",
+        image_tag="ghcr.io/onemorerabbit/openclaw-runtime:2026.5.5-r1",
         image_version="2026.5.5-r1",
         flavour_name="openclaw",
         upstream_version="v2026.5.5",
@@ -160,7 +160,7 @@ def test_build_metadata_yaml_dict_is_complete() -> None:
         notes="phase-1 verification",
     )
     out = md.to_yaml_dict()
-    assert out["image_tag"] == "ghcr.io/arcpower/openclaw-runtime:2026.5.5-r1"
+    assert out["image_tag"] == "ghcr.io/onemorerabbit/openclaw-runtime:2026.5.5-r1"
     assert out["flavour"] == "openclaw"
     assert out["wrapper_repo_head"] == "abc123"
     assert out["build_date"] == "2026-05-14T10:00:00Z"

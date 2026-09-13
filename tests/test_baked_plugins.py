@@ -19,7 +19,7 @@ TEMPLATES_ROOT = Path(__file__).resolve().parent.parent / "templates"
 
 def _plan(baked: tuple[str, ...] = ()) -> BuildPlan:
     return BuildPlan(
-        image_tag="ghcr.io/arcpower/openclaw-runtime:2026.6.11-r7",
+        image_tag="ghcr.io/onemorerabbit/openclaw-runtime:2026.6.11-r7",
         image_version="2026.6.11-r7",
         upstream_version_no_prefix="2026.6.11",
         wrapper_repo=Path("/tmp/openclaw-runtime"),

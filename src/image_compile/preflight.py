@@ -32,7 +32,7 @@ class PreflightResult:
     wrapper_repo: Path
     wrapper_head_sha: str | None
     image_version: str                                      # e.g. "2026.5.5-r1"
-    image_tag: str                                          # e.g. "ghcr.io/arcpower/openclaw-runtime:2026.5.5-r1"
+    image_tag: str                                          # e.g. "ghcr.io/onemorerabbit/openclaw-runtime:2026.5.5-r1"
     bundle_layout: BundleLayout
 
 
