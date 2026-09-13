@@ -5,9 +5,18 @@ produces paired defaults bundles in the platform registry.
 
 ## Design
 
-- [image-compile-build-brief-v0_1.md](../integrations/image-compile-build-brief-v0_1.md) — parent brief.
-- [image-compile-brief-amendments-v0_1.md](../docs/image-compile-brief-amendments-v0_1.md) — agreed amendments (multi-flavour, exit codes, probe corrections, image cleanup).
-- [image-compile-development-plan-v0_1.md](../docs/image-compile-development-plan-v0_1.md) — phased delivery plan.
+Design docs live in the **Atlas-AgentEco** vault, not in this repo (constitution principle 3:
+one home each). This seat syncs the vault to `.atlas/`; the paths below are relative to the
+vault root.
+
+- `components/agent-image/docs/image-compile-architecture-v0_2.md` — architecture.
+- `components/agent-image/docs/image-compile-development-plan-v0_1.md` — phased delivery plan.
+- `components/agent-image/docs/manual/image-compile-user-manual-v0_2.md` — operator manual.
+- `components/agent-image/docs/provides/` — the contracts this component publishes.
+
+The previous links here pointed at `../integrations/` and `../docs/`, sibling directories that
+have not existed since the pre-vault migration. Run `sh scripts/atlas-context.sh` for the
+session briefing; see `AGENTS.md`.
 
 ## Install (development)
 
@@ -54,8 +63,21 @@ Edit the `flavours:` block to add or remove flavours.
 
 ## Status
 
-**Phase 0 — scaffolding.** All five verbs are stubbed. No build or probe logic implemented yet.
-See the development plan above for what each phase delivers.
+**Released: `v0.3.0`** (2026-09-13) — the full pipeline is implemented. `build` runs preflight,
+buildx, smoke, probe, bundle and push; `probe`, `list`, `verify` and `diff` are live. Two
+flavours are configured (`openclaw`, `nanoclaw`). 101 tests pass.
+
+Current wrapper baseline: `openclaw-runtime` **v0.8.0**, wrapper revision **r8.1**, against
+upstream OpenClaw `2026.6.11`. Note the two numbering schemes are independent — see that repo's
+CHANGELOG.
+
+Build integrity, added after the r3 mislabelled-image incident: `--wrapper-rev` is **required**
+(it sets the image tag and the wrapper-rev label, so it is declared, never defaulted) and is
+cross-checked against the wrapper CHANGELOG's top `## r<N>` heading, with the wrapper worktree
+required clean. Both checks fail closed — an undeterminable answer is a refusal, not a pass.
+`--allow-dirty` accepts an unreproducible build knowingly.
+
+Images publish to `ghcr.io/onemorerabbit/` — the organisation, never a personal account.
 
 ## Tests
 
