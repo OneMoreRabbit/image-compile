@@ -46,6 +46,7 @@ class BuildOptions:
     flavour: str
     upstream_version: str
     wrapper_rev: str = "r1"
+    allow_dirty: bool = False
     wrapper_repo: Path | None = None
     no_push: bool = False
     no_bundle: bool = False
@@ -101,6 +102,7 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
             wrapper_repo_override=opts.wrapper_repo,
             force=opts.force,
             validate_upstream=opts.validate_upstream,
+            allow_dirty=opts.allow_dirty,
         )
     except PreflightError as e:
         err_console.print(f"[red]preflight failed:[/red] {e}")

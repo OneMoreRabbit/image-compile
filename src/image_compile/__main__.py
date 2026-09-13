@@ -73,6 +73,9 @@ def cli() -> None:
 @click.argument("flavour")
 @click.argument("upstream_version")
 @click.option("--wrapper-rev", default="r1", show_default=True, help="Wrapper revision suffix.")
+@click.option("--allow-dirty", is_flag=True, default=False,
+              help="Build from a wrapper repo with uncommitted changes. The recorded "
+                   "revision will not describe the image contents.")
 @click.option("--wrapper-repo", type=click.Path(file_okay=False, path_type=Path),
               help="Path to the wrapper repo (overrides flavour default).")
 @click.option("--no-push", is_flag=True, help="Build + probe + bundle locally; skip GHCR push.")
@@ -84,7 +87,7 @@ def cli() -> None:
               help="Do not remove locally-loaded image on failure (overrides config default).")
 @click.option("--dry-run", is_flag=True, help="Print what would happen; perform no side effects.")
 @common_options
-def build_cmd(flavour: str, upstream_version: str, wrapper_rev: str, wrapper_repo: Path | None,
+def build_cmd(flavour: str, upstream_version: str, wrapper_rev: str, allow_dirty: bool, wrapper_repo: Path | None,
               no_push: bool, no_bundle: bool, force: bool, no_validate_upstream: bool,
               keep_on_failure: bool, dry_run: bool, config_path: Path | None,
               registry_root: Path | None, json_output: bool, verbose: bool, quiet: bool) -> None:
@@ -109,6 +112,7 @@ def build_cmd(flavour: str, upstream_version: str, wrapper_rev: str, wrapper_rep
         flavour=flavour,
         upstream_version=upstream_version,
         wrapper_rev=wrapper_rev,
+        allow_dirty=allow_dirty,
         wrapper_repo=wrapper_repo,
         no_push=no_push,
         no_bundle=no_bundle,

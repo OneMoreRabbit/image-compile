@@ -114,6 +114,10 @@ class FlavourConfig:
     probe: ProbeConfig
     workspace_templates_dir: Path                   # relative to package templates root
     required_wrapper_files: tuple[str, ...] = ("Dockerfile", "entrypoint.sh")
+    wrapper_rev_check: bool = True                  # cross-check --wrapper-rev against the
+                                                    # wrapper CHANGELOG's top `## r<N>`.
+                                                    # Declare false only for a flavour that
+                                                    # does not use the r<rev> convention.
     baked_plugins: tuple[str, ...] = ()             # npm package names, UNpinned; the
                                                     # build pins each to the upstream
                                                     # version (lockstep releases)
@@ -236,6 +240,7 @@ def _parse_flavour(name: str, raw: dict[str, Any]) -> FlavourConfig:
         probe=_parse_probe(raw["probe"], name),
         workspace_templates_dir=Path(raw["workspace_templates_dir"]),
         required_wrapper_files=tuple(raw.get("required_wrapper_files", ("Dockerfile", "entrypoint.sh"))),
+        wrapper_rev_check=bool(raw.get("wrapper_rev_check", True)),
         baked_plugins=tuple(baked_raw),
     )
 

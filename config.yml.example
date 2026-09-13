@@ -29,6 +29,11 @@ flavours:
   openclaw:
     image_line: openclaw-runtime                      # → ghcr.io/<org>/openclaw-runtime
     wrapper_repo_default: ../openclaw-runtime         # path to the wrapper repo
+    wrapper_rev_check: true                           # cross-check --wrapper-rev against the
+                                                      # wrapper CHANGELOG's top `## r<N>`, and
+                                                      # refuse a dirty tree. Set false ONLY for a
+                                                      # flavour with no r<rev> convention; it is
+                                                      # the r3 mislabelled-image guard.
     upstream:
       kind: github_release
       repo: openclaw/openclaw
