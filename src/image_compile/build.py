@@ -45,7 +45,7 @@ PACKAGE_TEMPLATES = Path(__file__).resolve().parent.parent.parent / "templates"
 class BuildOptions:
     flavour: str
     upstream_version: str
-    wrapper_rev: str = "r1"
+    wrapper_rev: str          # no default: constitution 11, declared or the tool fails
     allow_dirty: bool = False
     wrapper_repo: Path | None = None
     no_push: bool = False

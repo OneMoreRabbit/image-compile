@@ -72,7 +72,10 @@ def cli() -> None:
 @cli.command("build")
 @click.argument("flavour")
 @click.argument("upstream_version")
-@click.option("--wrapper-rev", default="r1", show_default=True, help="Wrapper revision suffix.")
+@click.option("--wrapper-rev", required=True,
+              help="Wrapper revision, e.g. r8.1. REQUIRED: it sets the image tag and the "
+                   "wrapper-rev label, so it is declared, never defaulted "
+                   "(constitution 11). Must match the wrapper CHANGELOG's top heading.")
 @click.option("--allow-dirty", is_flag=True, default=False,
               help="Build from a wrapper repo with uncommitted changes. The recorded "
                    "revision will not describe the image contents.")
