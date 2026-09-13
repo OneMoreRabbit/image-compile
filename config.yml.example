@@ -2,7 +2,9 @@
 # docs/image-compile-brief-amendments-v0_1.md Amendment 1 for the multi-flavour shape.
 
 ghcr:
-  org: jobcpf                                         # GHCR org/user that owns the image repos
+  org: onemorerabbit                                  # GHCR org that owns the image repos.
+                                                      # ORGANISATION, never a personal account
+                                                      # (agenteco-needs-ghcr-namespace, 2026-09-13).
   auth_method: docker_config                          # reads ~/.docker/config.json
 
 registry:
