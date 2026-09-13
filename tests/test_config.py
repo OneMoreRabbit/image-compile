@@ -275,3 +275,36 @@ def test_non_git_wrapper_fails_closed(tmp_path) -> None:
     with pytest.raises(PreflightError) as ei:
         check_wrapper_rev(plain, "r8.1")
     assert "cannot determine" in str(ei.value)
+
+
+# ---------------------------------------------------------------------------
+# Constitution 11 -- behaviour-governing values are declared, or the tool fails
+# ---------------------------------------------------------------------------
+
+def _example_minus(tmp_path, section: str, key: str) -> Path:
+    import copy, yaml
+    root = Path(__file__).resolve().parent.parent
+    raw = yaml.safe_load((root / "config.yml.example").read_text(encoding="utf-8"))
+    cfg = copy.deepcopy(raw)
+    del cfg["flavours"]["openclaw"][section][key]
+    out = tmp_path / "cfg.yml"
+    out.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    return out
+
+
+def test_version_strip_prefix_must_be_declared(tmp_path) -> None:
+    """It shapes the image TAG, and a wrong tag is the r3 class. "" is the most
+    plausible default there is, which is precisely why it may not be one."""
+    with pytest.raises(ConfigError) as ei:
+        load_config(_example_minus(tmp_path, "upstream", "version_strip_prefix"))
+    assert "version_strip_prefix" in str(ei.value)
+    assert "flavours.openclaw.upstream" in str(ei.value)
+
+
+def test_ready_endpoint_must_be_declared(tmp_path) -> None:
+    """A wrong ready path that happens to return 200 is a false `ready` -- the
+    tool cannot tell it is probing the wrong door. A target, never defaulted."""
+    with pytest.raises(ConfigError) as ei:
+        load_config(_example_minus(tmp_path, "probe", "ready_endpoint"))
+    assert "ready_endpoint" in str(ei.value)
+    assert "flavours.openclaw.probe" in str(ei.value)
