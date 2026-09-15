@@ -214,10 +214,8 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
     reloc = summarize_relocation_candidates(probe_outcome.report.in_container_writes)
     if reloc:
         console.print(f"[yellow]⚠ {reloc.one_line()} — see probe-report.yml[/yellow]")
-        for path in reloc.likely[:10]:
-            console.print(f"    [yellow]likely[/yellow]   {path}")
-        if len(reloc.likely) > 10:
-            console.print(f"    [dim]… +{len(reloc.likely) - 10} more likely paths[/dim]")
+        for line in reloc.render_paths():
+            console.print(f"[yellow]{line}[/yellow]")
 
     # ----- Bundle assembly ---------------------------------------------
     if probe_outcome.captured_openclaw_json is None:

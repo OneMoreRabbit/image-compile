@@ -114,6 +114,29 @@ class RelocationSummary:
         return (f"{self.total} in-container write(s) flagged as relocation candidates "
                 f"({len(self.likely)} likely, {len(self.unknown)} unknown)")
 
+    def render_paths(self, cap: int = 10) -> list[str]:
+        """Lines listing the flagged paths, "likely" first, "unknown" labelled.
+
+        Both classes are listed. Printing only "likely" surfaced the paths the
+        tool had ALREADY classified and withheld the "unknown" ones that this
+        module's own docstring sends to the architect for the authoritative
+        decision -- so a 0-likely build, the good case, emitted a warning with
+        nothing to review (catalogue 0.45: selection inverse to usefulness).
+
+        Each class is capped independently and **every cap announces its
+        remainder**. A cap that hides what it dropped is a truthful-looking
+        answer over an incomplete set; the printed lines must always reconcile
+        with `one_line()`.
+        """
+        lines: list[str] = []
+        for label, paths in (("likely ", self.likely), ("unknown", self.unknown)):
+            for path in paths[:cap]:
+                lines.append(f"    {label}  {path}")
+            hidden = len(paths) - cap
+            if hidden > 0:
+                lines.append(f"    {label}  … and {hidden} more — see probe-report.yml")
+        return lines
+
 
 def summarize_relocation_candidates(
         records: Iterable["InContainerWriteRecord"]) -> RelocationSummary:

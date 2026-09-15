@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from image_compile.probe_report import (
-    DiffEntry, InContainerWriteRecord, classify_relocation, parse_docker_diff,
+    DiffEntry, InContainerWriteRecord, RelocationSummary, classify_relocation, parse_docker_diff,
     partition_diff_by_surface, summarize_relocation_candidates,
     summarize_relocation_from_yaml,
 )
@@ -147,3 +147,63 @@ def test_summarize_relocation_from_yaml_tolerates_missing_and_malformed() -> Non
     summary = summarize_relocation_from_yaml(
         {"in_container_writes": [{"path": "/x", "change": "added"}, "garbage"]})
     assert summary.unknown == ("/x",)
+
+
+# ---------------------------------------------------------------------------
+# render_paths -- both classes listed, every cap announcing its remainder
+# ---------------------------------------------------------------------------
+
+def _summary(n_likely: int, n_unknown: int) -> RelocationSummary:
+    return RelocationSummary(
+        likely=tuple(f"/likely/{i}" for i in range(n_likely)),
+        unknown=tuple(f"/unknown/{i}" for i in range(n_unknown)),
+    )
+
+
+def test_render_paths_lists_unknown_not_just_likely() -> None:
+    """The regression this fix exists for: a 0-likely build is the GOOD case and
+    used to print a warning with nothing to review, because the loop iterated
+    `likely` only. `unknown` is the class the architect must actually see."""
+    lines = _summary(0, 3).render_paths()
+    assert len(lines) == 3
+    assert all("unknown" in ln for ln in lines)
+    assert "/unknown/0" in "\n".join(lines)
+
+
+def test_render_paths_lists_likely_first() -> None:
+    lines = _summary(2, 2).render_paths()
+    assert "likely" in lines[0] and "likely" in lines[1]
+    assert "unknown" in lines[2] and "unknown" in lines[3]
+
+
+def test_every_cap_announces_its_remainder() -> None:
+    """A cap that hides what it dropped is a truthful-looking answer over an
+    incomplete set -- the defect this fix was told not to re-create one function
+    later. Both classes over the cap, both remainders stated."""
+    lines = _summary(14, 25).render_paths(cap=10)
+    joined = "\n".join(lines)
+    assert "and 4 more" in joined, "likely remainder not announced"
+    assert "and 15 more" in joined, "unknown remainder not announced"
+    assert joined.count("see probe-report.yml") == 2
+
+
+def test_printed_lines_reconcile_with_the_headline_count() -> None:
+    """Paths shown + remainders announced must equal one_line()'s total, or the
+    output contradicts its own summary."""
+    s = _summary(14, 25)
+    lines = s.render_paths(cap=10)
+    shown = sum(1 for ln in lines if "more —" not in ln)
+    announced = sum(int(ln.split("and ")[1].split(" more")[0])
+                    for ln in lines if "more —" in ln)
+    assert shown + announced == s.total == 39
+
+
+def test_render_paths_empty_when_nothing_flagged() -> None:
+    assert _summary(0, 0).render_paths() == []
+
+
+def test_no_remainder_line_when_exactly_at_the_cap() -> None:
+    """Off-by-one guard: 10 paths at cap 10 is complete, not truncated."""
+    lines = _summary(0, 10).render_paths(cap=10)
+    assert len(lines) == 10
+    assert "more" not in "\n".join(lines)
