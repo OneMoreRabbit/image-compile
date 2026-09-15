@@ -47,6 +47,7 @@ class BuildOptions:
     upstream_version: str
     wrapper_rev: str          # no default: constitution 11, declared or the tool fails
     allow_dirty: bool = False
+    wrapper_commit: str | None = None
     wrapper_repo: Path | None = None
     no_push: bool = False
     no_bundle: bool = False
@@ -103,6 +104,7 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
             force=opts.force,
             validate_upstream=opts.validate_upstream,
             allow_dirty=opts.allow_dirty,
+            expected_commit=opts.wrapper_commit,
         )
     except PreflightError as e:
         err_console.print(f"[red]preflight failed:[/red] {e}")

@@ -88,7 +88,8 @@ def changelog_top_rev(wrapper_repo: Path, filename: str = "CHANGELOG.md") -> str
 
 def check_wrapper_rev(wrapper_repo: Path, wrapper_rev: str, *,
                       allow_dirty: bool = False,
-                      require_changelog: bool = True) -> None:
+                      require_changelog: bool = True,
+                      expected_commit: str | None = None) -> None:
     """Tie `--wrapper-rev` to the tree actually being built. Raises PreflightError.
 
     The r3 incident (2026-05-22): `--wrapper-rev r3` was built from a checkout
@@ -98,6 +99,15 @@ def check_wrapper_rev(wrapper_repo: Path, wrapper_rev: str, *,
 
     Both checks fail CLOSED. An undeterminable result is a failure, not a pass --
     that substitution is the failure class this guard exists to break.
+
+    `expected_commit` closes the gap the first two cannot (catalogue 0.44): a
+    clean tree whose CHANGELOG says r8.1 is *a* tree claiming that revision, not
+    *the* tree anyone recorded. Both checks read properties of whatever tree they
+    run in, so they validate a self-asserted identity against itself. Measured
+    2026-09-15: `openclaw-runtime` had `main` at 25a8b67 and `dev` at 8bbfe22,
+    both clean, both with `## r8.1` topmost -- so both passed, while only one was
+    the recorded input. Pass the recorded commit here and the comparison is
+    against a value held OUTSIDE the tree being guarded.
     """
     dirty = _git_is_dirty(wrapper_repo)
     if dirty is None:
@@ -114,6 +124,9 @@ def check_wrapper_rev(wrapper_repo: Path, wrapper_rev: str, *,
             f"--allow-dirty to accept an unreproducible build.",
             exit_codes.PREFLIGHT_FAILED,
         )
+
+    if expected_commit:
+        check_wrapper_commit(wrapper_repo, expected_commit)
 
     if not require_changelog:
         return
@@ -136,10 +149,42 @@ def check_wrapper_rev(wrapper_repo: Path, wrapper_rev: str, *,
         )
 
 
+def check_wrapper_commit(wrapper_repo: Path, expected_commit: str) -> None:
+    """Assert the wrapper checkout is at the commit the caller recorded.
+
+    The only check here that compares against something the guarded tree cannot
+    assert about itself. Accepts an abbreviated SHA (git's own rules: a prefix,
+    minimum 7 characters) so a recorded short sha works unchanged.
+    """
+    expected = expected_commit.strip().lower()
+    if len(expected) < 7 or any(c not in "0123456789abcdef" for c in expected):
+        raise PreflightError(
+            f"--wrapper-commit {expected_commit!r} is not a usable commit id "
+            f"(hex, at least 7 characters).",
+            exit_codes.PREFLIGHT_FAILED,
+        )
+    head = _git_head_sha(wrapper_repo)
+    if head is None:
+        raise PreflightError(
+            f"cannot determine HEAD of the wrapper repo {wrapper_repo}, so "
+            f"--wrapper-commit {expected} cannot be verified.",
+            exit_codes.PREFLIGHT_FAILED,
+        )
+    if not head.lower().startswith(expected):
+        raise PreflightError(
+            f"wrapper repo {wrapper_repo} is at {head[:12]}, not the recorded "
+            f"--wrapper-commit {expected}. A clean tree whose CHANGELOG names the "
+            f"right revision is not evidence it is the right tree -- check out "
+            f"{expected} (detached is fine), or correct --wrapper-commit.",
+            exit_codes.PREFLIGHT_FAILED,
+        )
+
+
 def run_preflight(cfg: Config, flavour_name: str, upstream_version: str,
                   wrapper_rev: str, *, wrapper_repo_override: Path | None = None,
                   force: bool = False, validate_upstream: bool = True,
-                  allow_dirty: bool = False) -> PreflightResult:
+                  allow_dirty: bool = False,
+                  expected_commit: str | None = None) -> PreflightResult:
     """Run all pre-flight validations and return the resolved plan.
 
     Raises PreflightError on any check failure; the caller maps that to an
@@ -165,6 +210,7 @@ def run_preflight(cfg: Config, flavour_name: str, upstream_version: str,
         wrapper_repo, wrapper_rev,
         allow_dirty=allow_dirty,
         require_changelog=flavour.wrapper_rev_check,
+        expected_commit=expected_commit,
     )
 
     wrapper_head_sha = _git_head_sha(wrapper_repo)

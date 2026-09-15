@@ -308,3 +308,71 @@ def test_ready_endpoint_must_be_declared(tmp_path) -> None:
         load_config(_example_minus(tmp_path, "probe", "ready_endpoint"))
     assert "ready_endpoint" in str(ei.value)
     assert "flavours.openclaw.probe" in str(ei.value)
+
+
+# ---------------------------------------------------------------------------
+# --wrapper-commit: compare against a value the guarded tree cannot assert
+# ---------------------------------------------------------------------------
+
+def _head(repo) -> str:
+    import subprocess
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
+def test_wrapper_commit_matches_full_sha(tmp_path) -> None:
+    from image_compile.preflight import check_wrapper_rev
+    repo = _wrapper(tmp_path, CL_R8)
+    check_wrapper_rev(repo, "r8.1", expected_commit=_head(repo))
+
+
+def test_wrapper_commit_matches_abbreviated_sha(tmp_path) -> None:
+    """A recorded short sha (8bbfe22) must work unchanged -- git's own rules."""
+    from image_compile.preflight import check_wrapper_rev
+    repo = _wrapper(tmp_path, CL_R8)
+    check_wrapper_rev(repo, "r8.1", expected_commit=_head(repo)[:7])
+
+
+def test_the_trap_two_clean_trees_both_claiming_r8_1(tmp_path) -> None:
+    """The measured 2026-09-15 case: openclaw-runtime had main at 25a8b67 and
+    dev at 8bbfe22, both clean, both with `## r8.1` topmost. The rev+clean
+    checks pass on BOTH -- they read properties of whatever tree they run in.
+    Only the recorded commit separates them.
+    """
+    from image_compile.preflight import PreflightError, check_wrapper_rev
+    import subprocess
+    repo = _wrapper(tmp_path, CL_R8)                 # stands in for `main`
+    recorded = _head(repo)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "atlas-sync.sh").write_text("# scaffolding\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "atlas scaffolding"], cwd=repo, check=True)
+    moved_on = _head(repo)                            # stands in for `dev`
+    assert moved_on != recorded
+
+    # Without the pin: passes on the tree that merely claims r8.1.
+    check_wrapper_rev(repo, "r8.1")
+
+    # With it: refused, and the message names both commits.
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_rev(repo, "r8.1", expected_commit=recorded)
+    assert recorded[:7] in str(ei.value) and moved_on[:12] in str(ei.value)
+
+
+def test_wrapper_commit_undeterminable_fails_closed(tmp_path) -> None:
+    from image_compile.preflight import PreflightError, check_wrapper_commit
+    plain = tmp_path / "notgit"
+    plain.mkdir()
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_commit(plain, "8bbfe22")
+    assert "cannot determine HEAD" in str(ei.value)
+
+
+def test_wrapper_commit_rejects_an_unusable_id(tmp_path) -> None:
+    """Too short to be unambiguous, or not hex -- refuse rather than match loosely."""
+    from image_compile.preflight import PreflightError, check_wrapper_commit
+    repo = _wrapper(tmp_path, CL_R8)
+    for bad in ("8bb", "mainline", ""):
+        with pytest.raises(PreflightError) as ei:
+            check_wrapper_commit(repo, bad)
+        assert "not a usable commit id" in str(ei.value)

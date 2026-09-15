@@ -76,6 +76,11 @@ def cli() -> None:
               help="Wrapper revision, e.g. r8.1. REQUIRED: it sets the image tag and the "
                    "wrapper-rev label, so it is declared, never defaulted "
                    "(constitution 11). Must match the wrapper CHANGELOG's top heading.")
+@click.option("--wrapper-commit", default=None,
+              help="Assert the wrapper checkout is at this commit (abbreviated sha ok). "
+                   "The only guard that compares against a value recorded OUTSIDE the "
+                   "tree being built -- a clean tree whose CHANGELOG names the right "
+                   "revision is not evidence it is the right tree.")
 @click.option("--allow-dirty", is_flag=True, default=False,
               help="Build from a wrapper repo with uncommitted changes. The recorded "
                    "revision will not describe the image contents.")
@@ -90,7 +95,7 @@ def cli() -> None:
               help="Do not remove locally-loaded image on failure (overrides config default).")
 @click.option("--dry-run", is_flag=True, help="Print what would happen; perform no side effects.")
 @common_options
-def build_cmd(flavour: str, upstream_version: str, wrapper_rev: str, allow_dirty: bool, wrapper_repo: Path | None,
+def build_cmd(flavour: str, upstream_version: str, wrapper_rev: str, wrapper_commit: str | None, allow_dirty: bool, wrapper_repo: Path | None,
               no_push: bool, no_bundle: bool, force: bool, no_validate_upstream: bool,
               keep_on_failure: bool, dry_run: bool, config_path: Path | None,
               registry_root: Path | None, json_output: bool, verbose: bool, quiet: bool) -> None:
@@ -116,6 +121,7 @@ def build_cmd(flavour: str, upstream_version: str, wrapper_rev: str, allow_dirty
         upstream_version=upstream_version,
         wrapper_rev=wrapper_rev,
         allow_dirty=allow_dirty,
+        wrapper_commit=wrapper_commit,
         wrapper_repo=wrapper_repo,
         no_push=no_push,
         no_bundle=no_bundle,
