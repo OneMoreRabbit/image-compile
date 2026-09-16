@@ -167,3 +167,62 @@ def test_build_metadata_yaml_dict_is_complete() -> None:
     assert out["built_on"] == "zaphod"
     # Yaml-roundtrip check: dump+load returns the same shape (strings).
     assert yaml.safe_load(yaml.safe_dump(out)) == out
+
+
+# ---------------------------------------------------------------------------
+# The init-instruction anchor is a contract token (agent-compile's gate)
+# ---------------------------------------------------------------------------
+
+INIT_ANCHOR = "<!-- atlas:init-instruction -->"
+
+
+def test_every_flavour_template_carries_the_init_anchor() -> None:
+    """agent-compile fails the compile when a chain declares `init/` files and
+    the resolved AGENTS.md lacks this anchor. They match the token, never the
+    prose, so the wording here is ours to change freely -- but the token is an
+    interface and removing it breaks their gate, not ours.
+
+    Asserted against the template SOURCE so a reword that drops the line fails
+    here rather than in someone else's compile.
+    """
+    root = Path(__file__).resolve().parent.parent / "templates"
+    found = sorted(root.glob("*/blank-workspace/AGENTS.md.j2"))
+    assert found, "no blank-workspace AGENTS.md templates found"
+    for tpl in found:
+        body = tpl.read_text(encoding="utf-8")
+        assert body.count(INIT_ANCHOR) == 1, (
+            f"{tpl.relative_to(root)} must carry exactly one {INIT_ANCHOR} "
+            f"(found {body.count(INIT_ANCHOR)}) -- it is agent-compile's gate token"
+        )
+
+
+def test_rendered_agents_md_carries_the_init_anchor(tmp_path: Path) -> None:
+    """The gate reads the RENDERED bundle file, not the template, so assert it
+    survives templating -- a j2 construct that swallowed it would pass the
+    source check above and still break the compile."""
+    from datetime import datetime, timezone
+    from image_compile.config import FlavourConfig, ProbeConfig, UpstreamConfig
+
+    flavour = FlavourConfig(
+        name="openclaw",
+        image_line="openclaw-runtime",
+        wrapper_repo_default=tmp_path,
+        upstream=UpstreamConfig(kind="github_release", repo="x/y", version_strip_prefix="v"),
+        probe=ProbeConfig(
+            stub_config_template="openclaw/starting-openclaw.json.j2",
+            stub_secrets_template="openclaw/probe-stub-secrets.env",
+            startup_timeout_seconds=30, settle_seconds=5,
+            health_endpoint="/healthz", ready_endpoint="/readyz",
+            port_env_var="OPENCLAW_PORT", default_port=18789,
+        ),
+        workspace_templates_dir=Path("openclaw/blank-workspace"),
+    )
+    target = tmp_path / "workspace"
+    render_workspace(
+        flavour, templates_root=TEMPLATES_ROOT, target_dir=target,
+        image_version="2026.6.11-r8.1", upstream_version="v2026.6.11",
+        build_date=datetime(2026, 9, 16, tzinfo=timezone.utc),
+    )
+    body = (target / "AGENTS.md").read_text(encoding="utf-8")
+    assert INIT_ANCHOR in body
+    assert "~/workspace/init/" in body, "the anchor must sit beside a real instruction"
