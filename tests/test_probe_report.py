@@ -207,3 +207,78 @@ def test_no_remainder_line_when_exactly_at_the_cap() -> None:
     lines = _summary(0, 10).render_paths(cap=10)
     assert len(lines) == 10
     assert "more" not in "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# The 16 unknowns from the r8.1 / 6.35 probes, classified 2026-09-16
+# ---------------------------------------------------------------------------
+
+# Verbatim from the orchestrator's paste; identical set in both images.
+ACCOUNT_DB_PATHS = [
+    "/etc", "/etc/passwd", "/etc/passwd-", "/etc/group", "/etc/group-",
+    "/etc/shadow", "/etc/shadow-", "/etc/gshadow", "/etc/gshadow-",
+    "/etc/subuid", "/etc/subuid-", "/etc/subgid", "/etc/subgid-",
+]
+HOME_PATHS = ["/home", "/home/agent", "/home/agent/.openclaw"]
+
+
+def test_all_sixteen_probe_unknowns_now_classify() -> None:
+    """Every path the r8.1 and 6.35 probes deferred is now answered, so the next
+    probe reviews nothing that has already been reviewed."""
+    for path in ACCOUNT_DB_PATHS + HOME_PATHS:
+        assert classify_relocation(path) == "unlikely", path
+
+
+def test_etc_rule_is_not_a_blanket_over_etc() -> None:
+    """`^/etc$` is the directory's own mtime change. Anything else written under
+    /etc is a different fact and must still reach review."""
+    for path in ("/etc/openclaw.json", "/etc/ssl/certs/ca.pem", "/etc/passwd.bak",
+                 "/etc/subuid.old", "/etc/shadow2"):
+        assert classify_relocation(path) == "unknown", path
+
+
+def test_home_rules_do_not_swallow_files_written_into_the_home() -> None:
+    for path in ("/home/agent/notes.md", "/home/agent/.bashrc", "/home/other"):
+        assert classify_relocation(path) == "unknown", path
+
+
+def test_the_openclaw_tripwire_still_fires_for_children() -> None:
+    """The entrypoint creates ~/.openclaw EMPTY so a residual hardcoded path
+    fails soft, and its comment names this summary as what would surface a write
+    landing there. The empty mkdir is expected; a child path is the whole point
+    of the tripwire and must not be swallowed by the rule that silences the
+    directory.
+    """
+    assert classify_relocation("/home/agent/.openclaw") == "unlikely"
+
+    # The property is that a child is never SILENCED. Which non-silent class it
+    # lands in is a bonus: a .db child trips the persistent rules and comes back
+    # "likely", which is stronger than the "unknown" the tripwire needs.
+    for path in ("/home/agent/.openclaw/state.db",
+                 "/home/agent/.openclaw/credentials/whatsapp.json",
+                 "/home/agent/.openclaw/sessions"):
+        assert classify_relocation(path) != "unlikely", path
+
+    assert classify_relocation("/home/agent/.openclaw/state.db") == "likely"
+    assert classify_relocation("/home/agent/.openclaw/sessions") == "unknown"
+
+
+def test_a_real_persistent_write_under_the_home_is_still_likely() -> None:
+    """The transient rules must not outrank the persistent ones for real state."""
+    assert classify_relocation("/home/agent/.openclaw/state.sqlite") == "likely"
+    assert classify_relocation("/home/agent/.cache/x") == "likely"
+
+
+def test_the_probe_set_reduces_to_zero_outstanding() -> None:
+    """End to end: the exact 21-write probe set now summarises as nothing to review."""
+    from image_compile.probe_report import summarize_relocation_candidates, InContainerWriteRecord
+    paths = ACCOUNT_DB_PATHS + HOME_PATHS + [
+        "/tmp", "/tmp/openclaw-logs", "/tmp/openclaw-1001",
+        "/tmp/openclaw-1001/gateway.lock", "/run",
+    ]
+    records = [InContainerWriteRecord(path=p, change="changed",
+                                      candidate_for_relocation=classify_relocation(p))
+               for p in paths]
+    summary = summarize_relocation_candidates(records)
+    assert summary.total == 0, f"still outstanding: {summary.likely + summary.unknown}"
+    assert not summary
