@@ -282,3 +282,53 @@ def test_the_probe_set_reduces_to_zero_outstanding() -> None:
     summary = summarize_relocation_candidates(records)
     assert summary.total == 0, f"still outstanding: {summary.likely + summary.unknown}"
     assert not summary
+
+
+# ---------------------------------------------------------------------------
+# Guard 9: supplementary gids must reach the agent PROCESS
+# ---------------------------------------------------------------------------
+
+STATUS_WITH = """Name:\topenclaw
+Uid:\t1001\t1001\t1001\t1001
+Gid:\t1001\t1001\t1001\t1001
+Groups:\t64010 64011 1001
+"""
+STATUS_WITHOUT = """Name:\topenclaw
+Uid:\t1001\t1001\t1001\t1001
+Gid:\t1001\t1001\t1001\t1001
+Groups:\t1001
+"""
+
+
+def test_parse_proc_groups_reads_the_groups_line() -> None:
+    from image_compile.probe import parse_proc_groups
+    assert parse_proc_groups(STATUS_WITH) == [1001, 64010, 64011]
+    assert parse_proc_groups(STATUS_WITHOUT) == [1001]
+    assert parse_proc_groups("Name:\tx\n") == []
+
+
+def test_missing_supp_gids_detects_the_real_defect() -> None:
+    """The measured 2026-09-18 case: the wrapper usermods the gids onto the
+    account, then drops privilege with the explicit gosu uid:gid form, which
+    populates no supplementary set. /etc/group is right; the process is not."""
+    from image_compile.probe import missing_process_supp_gids
+    assert missing_process_supp_gids(STATUS_WITHOUT, (64010, 64011)) == [64010, 64011]
+
+
+def test_missing_supp_gids_empty_when_present() -> None:
+    from image_compile.probe import missing_process_supp_gids
+    assert missing_process_supp_gids(STATUS_WITH, (64010, 64011)) == []
+
+
+def test_partial_attachment_is_still_a_failure() -> None:
+    from image_compile.probe import missing_process_supp_gids
+    partial = "Groups:\t64010 1001\n"
+    assert missing_process_supp_gids(partial, (64010, 64011)) == [64011]
+
+
+def test_probe_requests_supp_gids_at_all() -> None:
+    """The guard is worthless if the probe asks for none -- which is exactly why
+    this class went unseen: AGENT_SUPP_GIDS was passed empty from the first
+    revision, so no boot ever exercised the path."""
+    from image_compile.probe import PROBE_SUPP_GIDS
+    assert len(PROBE_SUPP_GIDS) >= 2
