@@ -45,7 +45,9 @@ PACKAGE_TEMPLATES = Path(__file__).resolve().parent.parent.parent / "templates"
 class BuildOptions:
     flavour: str
     upstream_version: str
-    wrapper_rev: str = "r1"
+    wrapper_rev: str          # no default: constitution 11, declared or the tool fails
+    allow_dirty: bool = False
+    wrapper_commit: str | None = None
     wrapper_repo: Path | None = None
     no_push: bool = False
     no_bundle: bool = False
@@ -101,6 +103,8 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
             wrapper_repo_override=opts.wrapper_repo,
             force=opts.force,
             validate_upstream=opts.validate_upstream,
+            allow_dirty=opts.allow_dirty,
+            expected_commit=opts.wrapper_commit,
         )
     except PreflightError as e:
         err_console.print(f"[red]preflight failed:[/red] {e}")
@@ -212,10 +216,8 @@ def run_build_verb(cfg: Config, opts: BuildOptions, *,
     reloc = summarize_relocation_candidates(probe_outcome.report.in_container_writes)
     if reloc:
         console.print(f"[yellow]⚠ {reloc.one_line()} — see probe-report.yml[/yellow]")
-        for path in reloc.likely[:10]:
-            console.print(f"    [yellow]likely[/yellow]   {path}")
-        if len(reloc.likely) > 10:
-            console.print(f"    [dim]… +{len(reloc.likely) - 10} more likely paths[/dim]")
+        for line in reloc.render_paths():
+            console.print(f"[yellow]{line}[/yellow]")
 
     # ----- Bundle assembly ---------------------------------------------
     if probe_outcome.captured_openclaw_json is None:

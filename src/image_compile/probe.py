@@ -136,7 +136,7 @@ def _docker_run_argv(setup: ProbeSetup) -> list[str]:
         "-e", "AGENT_NAME=probe",
         "-e", f"AGENT_UID={setup.agent_uid}",
         "-e", f"AGENT_PRIMARY_GID={setup.agent_primary_gid}",
-        "-e", "AGENT_SUPP_GIDS=",
+        "-e", f"AGENT_SUPP_GIDS={','.join(str(g) for g in PROBE_SUPP_GIDS)}",
         "-e", "AGENT_HOME=/agent",
         "-e", "OPENCLAW_BIND=lan",
         "-e", f"{p.port_env_var}={p.default_port}",
@@ -205,6 +205,56 @@ EXEC_STATE_DIR = "/agent/configs/main"
 
 DUPLICATE_PLUGIN_MARKER = "duplicate plugin id"
 
+# Guard 9 (2026-09-18): supplementary groups must reach the agent PROCESS.
+#
+# The wrapper groupadds each AGENT_SUPP_GIDS entry and `usermod -G`s them onto
+# the agent account, which is correct on disk -- but whether they reach process
+# credentials depends entirely on how privilege is dropped. The probe passed
+# AGENT_SUPP_GIDS= (empty) from the first revision, so it never exercised the
+# path at all and could not have caught a drop.
+#
+# These two gids are high, unused in the base images, and asserted to differ
+# from the probe's own primary gid so a collision cannot make the test pass
+# for the wrong reason.
+PROBE_SUPP_GIDS = (64010, 64011)
+
+
+def parse_proc_groups(status_output: str) -> list[int]:
+    """Parse the `Groups:` line of a /proc/<pid>/status dump.
+
+    Split out as a pure function because the value of this guard is entirely in
+    reading the RUNNING process's credentials. A `docker exec -u <uid>:<gid>`
+    would re-run Docker's own user resolution -- the very mechanism under test --
+    and report on a process the wrapper never created.
+    """
+    for line in status_output.splitlines():
+        if line.startswith("Groups:"):
+            return sorted(int(x) for x in line.split(":", 1)[1].split())
+    return []
+
+
+def supp_gid_discrepancy(status_output: str, expected: Iterable[int],
+                         primary_gid: int) -> tuple[list[int], list[int]]:
+    """(missing, unexpected) comparing the process's supplementary set to what was asked.
+
+    Asserts the PROPERTY -- the set equals the request -- rather than either
+    symptom of getting it wrong:
+
+    * "is it empty?" describes one code path. Measured on Sam 2026-09-18, the
+      explicit `gosu uid:gid` form leaves `Groups:` **entirely empty** -- it does
+      not even echo the primary gid. A test written against emptiness would pass
+      any future breakage that happened to leave one group behind.
+    * "does it contain the requested gids?" passes for the wrong reason when
+      something else has left extra groups attached, and an UNEXPECTED
+      supplementary group is privilege the agent was never granted.
+
+    The primary gid is excluded from the comparison: `initgroups` structurally
+    includes it, so its presence is not evidence either way.
+    """
+    actual = set(parse_proc_groups(status_output)) - {primary_gid}
+    want = set(expected)
+    return sorted(want - actual), sorted(actual - want)
+
 # Guard 8 (r8.1): markers of a plugin failing to LOAD (not to connect —
 # stub creds can never connect, and connectivity is out of probe scope).
 # Discovery-level checks passed while channel start failed on r8; these
@@ -233,6 +283,122 @@ def missing_bundled_plugins(plugins_list_output: str,
     assertion is what turns an upstream layout change into a failed build
     instead of a broken deployed agent (r8 brief, guard 7)."""
     return [pid for pid in plugin_ids if f"stock:{pid}" not in plugins_list_output]
+
+
+def verify_process_supp_gids(docker: DockerCLI, setup: ProbeSetup,
+                             progress: Callable[[str], None] | None = None) -> None:
+    """Assert the agent process actually holds the requested supplementary gids.
+
+    Reads /proc/<pid>/status for the first process running as AGENT_UID -- the
+    credentials the wrapper's own privilege drop produced.
+
+    It selects by UID, never by PID. Container PID 1 is tini running the
+    entrypoint AS ROOT (Uid 0, Groups 0); reading it and pasting the result
+    unexamined would grade the image innocent of exactly this defect. That
+    happened on 2026-09-18 -- a specified check named PID 1 and was caught only
+    because the operator examined the output before reporting it. The agent is
+    the child that gosu execs, and selecting on uid is what makes finding it
+    structural rather than a matter of getting the PID right. Raises ProbeError when
+    a requested gid is missing, which is the build-time failure that stops a
+    disk-parity-without-process-parity image from ever being published.
+    """
+    expected = list(PROBE_SUPP_GIDS)
+    if not expected:
+        return
+    if setup.agent_primary_gid in expected:
+        raise ProbeError(
+            f"probe supplementary gids {expected} collide with the probe's primary "
+            f"gid {setup.agent_primary_gid}; the assertion could pass for the wrong "
+            f"reason. Change PROBE_SUPP_GIDS."
+        )
+    script = (
+        'for s in /proc/[0-9]*/status; do '
+        f'  if [ "$(awk \'/^Uid:/{{print $2}}\' "$s" 2>/dev/null)" = "{setup.agent_uid}" ]; then '
+        '    grep ^Groups: "$s"; exit 0; fi; done; exit 1'
+    )
+    try:
+        result = docker.run(["exec", setup.container_name, "sh", "-c", script])
+    except DockerError as e:
+        raise ProbeError(
+            f"could not read the agent process credentials in {setup.container_name}: "
+            f"{e.stderr or e}"
+        ) from e
+    if not result.stdout.strip():
+        raise ProbeError(
+            f"no process running as uid {setup.agent_uid} found in the probe "
+            f"container -- cannot verify supplementary groups. Refusing to grade "
+            f"this on any other process: PID 1 is root and would pass vacuously."
+        )
+    missing, unexpected = supp_gid_discrepancy(
+        result.stdout, expected, setup.agent_primary_gid)
+    if missing:
+        raise ProbeError(
+            f"supplementary gids {missing} were requested via AGENT_SUPP_GIDS but "
+            f"are NOT in the agent process credentials ({result.stdout.strip()}). "
+            f"The wrapper may attach them to the account and still drop them at the "
+            f"privilege hand-off -- disk parity is not process parity."
+        )
+    if unexpected:
+        raise ProbeError(
+            f"the agent process carries supplementary gids {unexpected} that were "
+            f"never requested ({result.stdout.strip()}). Unexpected group membership "
+            f"is privilege the agent was not granted."
+        )
+    if progress:
+        progress(f"supplementary gids {expected} present on the agent process")
+
+
+def verify_group_mediated_read(docker: DockerCLI, setup: ProbeSetup,
+                               progress: Callable[[str], None] | None = None) -> None:
+    """Assert the agent can actually READ a file granted only by a supplementary group.
+
+    Guard 9 proves the gids are in the process credentials. This proves the
+    capability they exist to provide, which is what the compiled plan promises
+    and what an operator would call working.
+
+    It matters because `AGENT_PRIMARY_GID` is the agent's PERSONAL gid, so every
+    classification grant lands in the supplementary set: a credential check that
+    passed while reads failed would be the adjacent-measurement trap again, one
+    level up.
+
+    The fixture is deliberately hostile to accident -- mode 0640 and owned by
+    root with the supplementary group, so owner bits and other bits both deny.
+    Only the group grant can satisfy the read.
+    """
+    gid = PROBE_SUPP_GIDS[0]
+    path = "/tmp/probe-group-grant"
+    setup_script = (
+        f"install -o 0 -g {gid} -m 0640 /dev/null {path} && "
+        f"printf 'granted' > {path} && stat -c '%U:%G %a' {path}"
+    )
+    try:
+        docker.run(["exec", "--user", "0:0", setup.container_name, "sh", "-c", setup_script])
+    except DockerError as e:
+        raise ProbeError(
+            f"could not place the group-grant fixture in {setup.container_name}: "
+            f"{e.stderr or e}"
+        ) from e
+
+    # Read it as the AGENT process's identity, not a fresh resolution: reuse the
+    # running process's credentials by entering via its own uid.
+    try:
+        result = docker.run([
+            "exec", "--user", str(setup.agent_uid), setup.container_name,
+            "sh", "-c", f"cat {path}",
+        ])
+    except DockerError as e:
+        raise ProbeError(
+            f"the agent identity CANNOT read a file granted solely by supplementary "
+            f"group {gid} (mode 0640, root:{gid}). Group-mediated access is dead at "
+            f"process level -- every classification grant in a compiled plan would "
+            f"fail this way, silently, with no error at deploy. {e.stderr or e}"
+        ) from e
+    if result.stdout.strip() != "granted":
+        raise ProbeError(
+            f"group-granted read returned {result.stdout.strip()!r}, expected 'granted'"
+        )
+    if progress:
+        progress(f"group-mediated read through supplementary gid {gid} succeeded")
 
 
 def verify_bundled_plugins(docker: DockerCLI, setup: ProbeSetup,
@@ -451,6 +617,8 @@ def run_probe(flavour: FlavourConfig, image_tag: str, image_version: str,
         progress(f"readyz: status={readyz.status}")
 
         verify_bundled_plugins(docker, setup, progress=progress)
+        verify_process_supp_gids(docker, setup, progress=progress)
+        verify_group_mediated_read(docker, setup, progress=progress)
 
         diff_output = capture_diff(docker, setup)
         progress(f"docker diff: {diff_output.count(chr(10))} change lines")

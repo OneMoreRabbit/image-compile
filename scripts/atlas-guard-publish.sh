@@ -35,6 +35,22 @@ if [ -n "$REC" ] && [ -n "$BWORK" ] && [ -n "$ATLAS_VAULT_REMOTE" ]; then
   fi
 fi
 
+# Cross-vault needs arrived? (1.27.2) atlas-needs.py --show exits 2 with a one-line
+# message only when ~/.atlas/needs-open.md changed since last shown — the same exit-2
+# pattern as the alignment gate, because an exit-0 print never reaches the model. Two
+# stats, no network; never wakes a seat (it speaks inside a turn already underway).
+if [ -f "$ATLAS_REPO_ROOT/scripts/atlas-needs.py" ]; then
+  PY=$(command -v python3 || command -v python)
+  printf '%s' "$PAYLOAD" | "$PY" "$ATLAS_REPO_ROOT/scripts/atlas-needs.py" --show || exit $?
+elif [ -n "${ATLAS_NEEDS_REGISTER:-}" ]; then
+  # configured to read the estate register but the tool is missing: a capability absent
+  # must not look like one that found nothing (1.28.1). Warn once per session.
+  _nw="${TMPDIR:-/tmp}/atlas-needs-missing.$(printf '%s' "$ATLAS_REPO_ROOT" | cksum | cut -d' ' -f1)"
+  if [ ! -f "$_nw" ]; then : > "$_nw"
+    echo "atlas: ATLAS_NEEDS_REGISTER is set but scripts/atlas-needs.py is missing — re-run atlas_init (1.28.1); you are not seeing cross-vault needs." >&2
+  fi
+fi
+
 [ -d "$ATLAS_VAULT/.git" ] || exit 0
 [ -f "$ATLAS_SENTINEL" ] && exit 0
 [ -n "$(git -C "$ATLAS_VAULT" status --porcelain)" ] || exit 0

@@ -57,13 +57,19 @@ _REQUIRED_FLAVOUR = (
     "probe",
     "workspace_templates_dir",
 )
-_REQUIRED_UPSTREAM = ("kind",)
+# version_strip_prefix shapes the image TAG, so it is declared, never defaulted
+# (constitution 11): "" is the most plausible default there is, and a wrong tag
+# is the r3 class exactly.
+_REQUIRED_UPSTREAM = ("kind", "version_strip_prefix")
 _REQUIRED_PROBE = (
     "stub_config_template",
     "stub_secrets_template",
     "startup_timeout_seconds",
     "settle_seconds",
     "health_endpoint",
+    # ready_endpoint is a TARGET, not a capability (constitution 1.4): a wrong path
+    # that happens to return 200 is a false `ready`. Declared, never defaulted.
+    "ready_endpoint",
     "port_env_var",
     "default_port",
 )
@@ -76,8 +82,9 @@ _REQUIRED_PROBE = (
 @dataclass(frozen=True)
 class UpstreamConfig:
     kind: str                         # "github_release" | "npm" | "vendored"
+    version_strip_prefix: str         # e.g. "v" → tag "v2026.5.5" becomes "2026.5.5".
+                                      # Declared, never defaulted (constitution 11).
     repo: str | None = None           # github_release: "openclaw/openclaw"
-    version_strip_prefix: str = ""    # e.g. "v" → tag "v2026.5.5" becomes "2026.5.5"
 
 
 @dataclass(frozen=True)
@@ -114,6 +121,10 @@ class FlavourConfig:
     probe: ProbeConfig
     workspace_templates_dir: Path                   # relative to package templates root
     required_wrapper_files: tuple[str, ...] = ("Dockerfile", "entrypoint.sh")
+    wrapper_rev_check: bool = True                  # cross-check --wrapper-rev against the
+                                                    # wrapper CHANGELOG's top `## r<N>`.
+                                                    # Declare false only for a flavour that
+                                                    # does not use the r<rev> convention.
     baked_plugins: tuple[str, ...] = ()             # npm package names, UNpinned; the
                                                     # build pins each to the upstream
                                                     # version (lockstep releases)
@@ -130,7 +141,6 @@ class FlavourConfig:
 @dataclass(frozen=True)
 class GhcrConfig:
     org: str
-    auth_method: str = "docker_config"
 
 
 @dataclass(frozen=True)
@@ -198,7 +208,7 @@ def _parse_upstream(raw: dict[str, Any], flavour_name: str) -> UpstreamConfig:
     return UpstreamConfig(
         kind=kind,
         repo=raw.get("repo"),
-        version_strip_prefix=raw.get("version_strip_prefix", ""),
+        version_strip_prefix=raw["version_strip_prefix"],
     )
 
 
@@ -210,7 +220,7 @@ def _parse_probe(raw: dict[str, Any], flavour_name: str) -> ProbeConfig:
         startup_timeout_seconds=int(raw["startup_timeout_seconds"]),
         settle_seconds=int(raw["settle_seconds"]),
         health_endpoint=raw["health_endpoint"],
-        ready_endpoint=raw.get("ready_endpoint", "/readyz"),
+        ready_endpoint=raw["ready_endpoint"],
         port_env_var=raw["port_env_var"],
         default_port=int(raw["default_port"]),
         channel_start_check=raw.get("channel_start_check"),
@@ -236,6 +246,7 @@ def _parse_flavour(name: str, raw: dict[str, Any]) -> FlavourConfig:
         probe=_parse_probe(raw["probe"], name),
         workspace_templates_dir=Path(raw["workspace_templates_dir"]),
         required_wrapper_files=tuple(raw.get("required_wrapper_files", ("Dockerfile", "entrypoint.sh"))),
+        wrapper_rev_check=bool(raw.get("wrapper_rev_check", True)),
         baked_plugins=tuple(baked_raw),
     )
 
@@ -280,7 +291,6 @@ def load_config(path: Path | None = None) -> Config:
     _require_keys(raw["ghcr"], _REQUIRED_GHCR, "ghcr")
     ghcr = GhcrConfig(
         org=raw["ghcr"]["org"],
-        auth_method=raw["ghcr"].get("auth_method", "docker_config"),
     )
 
     _require_keys(raw["registry"], _REQUIRED_REGISTRY, "registry")

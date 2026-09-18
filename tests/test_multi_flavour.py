@@ -49,3 +49,20 @@ def test_nanoclaw_templates_exist() -> None:
     assert (templates / "probe-stub-secrets.env").is_file()
     for w in ("AGENTS.md.j2", "SOUL.md.j2", "TOOLS.md.j2"):
         assert (templates / "blank-workspace" / w).is_file(), f"missing {w}"
+
+
+def test_config_example_publishes_to_the_organisation() -> None:
+    """The shipped example must not default to a personal namespace.
+
+    Regression guard for agenteco-needs-ghcr-namespace (2026-09-13): the example
+    defaulted to `jobcpf`, so copying it published estate images to a personal
+    account with nobody choosing to. The r3 mislabelled-image incident was built
+    and pushed through exactly that path. A wrong *default* needs no decision
+    from anyone to take effect, which is why it is worth a test and a comment is
+    not enough.
+    """
+    cfg = load_config(CONFIG_EXAMPLE)
+    assert cfg.ghcr.org == "onemorerabbit", (
+        f"config.yml.example ships ghcr.org={cfg.ghcr.org!r}; estate images publish "
+        "to the ORGANISATION namespace, never a personal account"
+    )

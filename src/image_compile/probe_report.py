@@ -64,6 +64,39 @@ def parse_docker_diff(output: str) -> list[DiffEntry]:
 _TRANSIENT_PATTERNS = [
     re.compile(r"^/(tmp|run|var/run|proc|sys|dev)(/|$)"),
     re.compile(r".+\.(sock|pid|lock)$"),
+
+    # Container-start identity provisioning (classified 2026-09-16 from the
+    # 2026.6.11-r8.1 / 2026.6.35-r8.1 probes -- an identical write set in both).
+    #
+    # openclaw-runtime's entrypoint runs `groupadd` + `useradd -d /home/agent`
+    # before dropping privileges, which rewrites the whole account database and
+    # leaves a dash-suffixed backup beside each file. Thirteen paths, ONE cause:
+    # deterministic, regenerated identically from AGENT_UID / AGENT_PRIMARY_GID
+    # on every start, and nothing to preserve -- relocating them would be wrong,
+    # since they must live in the container's own /etc.
+    #
+    # `^/etc$` is the directory's own mtime change and is anchored EXACTLY:
+    # a write to any other /etc path stays unknown and still gets reviewed.
+    re.compile(r"^/etc$"),
+    re.compile(r"^/etc/(passwd|group|shadow|gshadow|subuid|subgid)-?$"),
+
+    # Same boot, same cause: useradd creates the home and the entrypoint runs
+    # `chown -R /home/agent`. Anchored exactly -- a file written INTO the home
+    # is a different fact and stays unknown.
+    re.compile(r"^/home$"),
+    re.compile(r"^/home/agent$"),
+
+    # The deliberate empty tripwire. The entrypoint creates ~/.openclaw empty so
+    # that any residual hardcoded path fails soft rather than on a missing home,
+    # and its comment names THIS summary as what would surface a runtime write
+    # landing there. Real state lives on the configs surface via
+    # OPENCLAW_STATE_DIR (r2/r6).
+    #
+    # ANCHORED TO THE DIRECTORY ITSELF, deliberately not `(/|$)`: the empty
+    # mkdir is expected and uninteresting, but a CHILD path under it is exactly
+    # what the tripwire exists to catch and must keep reaching review. Widening
+    # this one pattern would disarm a guard the wrapper depends on.
+    re.compile(r"^/home/agent/\.openclaw$"),
 ]
 
 _LIKELY_PERSISTENT_PATTERNS = [
@@ -113,6 +146,29 @@ class RelocationSummary:
     def one_line(self) -> str:
         return (f"{self.total} in-container write(s) flagged as relocation candidates "
                 f"({len(self.likely)} likely, {len(self.unknown)} unknown)")
+
+    def render_paths(self, cap: int = 10) -> list[str]:
+        """Lines listing the flagged paths, "likely" first, "unknown" labelled.
+
+        Both classes are listed. Printing only "likely" surfaced the paths the
+        tool had ALREADY classified and withheld the "unknown" ones that this
+        module's own docstring sends to the architect for the authoritative
+        decision -- so a 0-likely build, the good case, emitted a warning with
+        nothing to review (catalogue 0.45: selection inverse to usefulness).
+
+        Each class is capped independently and **every cap announces its
+        remainder**. A cap that hides what it dropped is a truthful-looking
+        answer over an incomplete set; the printed lines must always reconcile
+        with `one_line()`.
+        """
+        lines: list[str] = []
+        for label, paths in (("likely ", self.likely), ("unknown", self.unknown)):
+            for path in paths[:cap]:
+                lines.append(f"    {label}  {path}")
+            hidden = len(paths) - cap
+            if hidden > 0:
+                lines.append(f"    {label}  … and {hidden} more — see probe-report.yml")
+        return lines
 
 
 def summarize_relocation_candidates(

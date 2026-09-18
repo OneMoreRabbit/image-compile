@@ -5,4 +5,4 @@
 # development plan, patch = fixes since. pyproject.toml reads this via
 # [tool.hatch.version]; `image-compile --version` and each bundle's
 # metadata.yml (`image_compile_version`) both read it at runtime.
-__version__ = "0.3.0"
+__version__ = "0.7.0"

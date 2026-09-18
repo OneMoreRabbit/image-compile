@@ -188,3 +188,191 @@ def test_malformed_yaml_raises(tmp_path: Path) -> None:
     p.write_text("ghcr: [unclosed", encoding="utf-8")
     with pytest.raises(ConfigError, match="parse"):
         load_config(p)
+
+
+# ---------------------------------------------------------------------------
+# Wrapper-revision guard (the r3 incident)
+# ---------------------------------------------------------------------------
+
+def _wrapper(tmp_path, changelog: str | None, commit: bool = True):
+    """A throwaway git repo standing in for a wrapper checkout."""
+    import subprocess
+    repo = tmp_path / "wrapper"
+    repo.mkdir()
+    (repo / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    if changelog is not None:
+        (repo / "CHANGELOG.md").write_text(changelog, encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=repo, check=True)
+    if commit:
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "init"], cwd=repo, check=True)
+    return repo
+
+
+CL_R8 = "# Changelog\n\nPreamble.\n\n## r8.1 — 2026-07-09\n\nfix\n\n## r8 — 2026-07-01\n\nolder\n"
+
+
+def test_wrapper_rev_matching_changelog_passes(tmp_path) -> None:
+    from image_compile.preflight import check_wrapper_rev
+    check_wrapper_rev(_wrapper(tmp_path, CL_R8), "r8.1")
+
+
+def test_wrapper_rev_mismatch_is_the_r3_incident(tmp_path) -> None:
+    """--wrapper-rev r3 against a tree that is not r3 must fail the build."""
+    from image_compile.preflight import PreflightError, check_wrapper_rev
+    repo = _wrapper(tmp_path, "# Changelog\n\n## r1 — scaffold\n\nfirst\n")
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_rev(repo, "r3")
+    assert "does not match the wrapper tree" in str(ei.value)
+    assert "r1" in str(ei.value)
+
+
+def test_dirty_wrapper_tree_refuses(tmp_path) -> None:
+    from image_compile.preflight import PreflightError, check_wrapper_rev
+    repo = _wrapper(tmp_path, CL_R8)
+    (repo / "entrypoint.sh").write_text("# uncommitted\n", encoding="utf-8")
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_rev(repo, "r8.1")
+    assert "uncommitted changes" in str(ei.value)
+
+
+def test_dirty_wrapper_tree_allowed_explicitly(tmp_path) -> None:
+    from image_compile.preflight import check_wrapper_rev
+    repo = _wrapper(tmp_path, CL_R8)
+    (repo / "entrypoint.sh").write_text("# uncommitted\n", encoding="utf-8")
+    check_wrapper_rev(repo, "r8.1", allow_dirty=True)
+
+
+def test_missing_changelog_fails_closed(tmp_path) -> None:
+    """No evidence must not read as no problem -- and this is the branch that
+    would have caught the real r3 incident.
+
+    Verified against the actual history: the mislabelled image was built from
+    `655d9ca`, and at that commit openclaw-runtime had NO CHANGELOG at all. The
+    mismatch branch below would not have fired -- there was nothing to mismatch.
+    Only failing closed on absent evidence catches it. A warn-and-continue here,
+    which is the friendlier choice, would have let the r3 build through.
+    """
+    from image_compile.preflight import PreflightError, check_wrapper_rev
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_rev(_wrapper(tmp_path, None), "r8.1")
+    assert "wrapper_rev_check" in str(ei.value)
+
+
+def test_missing_changelog_passes_when_flavour_opts_out(tmp_path) -> None:
+    from image_compile.preflight import check_wrapper_rev
+    check_wrapper_rev(_wrapper(tmp_path, None), "r8.1", require_changelog=False)
+
+
+def test_non_git_wrapper_fails_closed(tmp_path) -> None:
+    """An undeterminable clean-check is a failure, not a pass."""
+    from image_compile.preflight import PreflightError, check_wrapper_rev
+    plain = tmp_path / "notgit"
+    plain.mkdir()
+    (plain / "CHANGELOG.md").write_text(CL_R8, encoding="utf-8")
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_rev(plain, "r8.1")
+    assert "cannot determine" in str(ei.value)
+
+
+# ---------------------------------------------------------------------------
+# Constitution 11 -- behaviour-governing values are declared, or the tool fails
+# ---------------------------------------------------------------------------
+
+def _example_minus(tmp_path, section: str, key: str) -> Path:
+    import copy, yaml
+    root = Path(__file__).resolve().parent.parent
+    raw = yaml.safe_load((root / "config.yml.example").read_text(encoding="utf-8"))
+    cfg = copy.deepcopy(raw)
+    del cfg["flavours"]["openclaw"][section][key]
+    out = tmp_path / "cfg.yml"
+    out.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    return out
+
+
+def test_version_strip_prefix_must_be_declared(tmp_path) -> None:
+    """It shapes the image TAG, and a wrong tag is the r3 class. "" is the most
+    plausible default there is, which is precisely why it may not be one."""
+    with pytest.raises(ConfigError) as ei:
+        load_config(_example_minus(tmp_path, "upstream", "version_strip_prefix"))
+    assert "version_strip_prefix" in str(ei.value)
+    assert "flavours.openclaw.upstream" in str(ei.value)
+
+
+def test_ready_endpoint_must_be_declared(tmp_path) -> None:
+    """A wrong ready path that happens to return 200 is a false `ready` -- the
+    tool cannot tell it is probing the wrong door. A target, never defaulted."""
+    with pytest.raises(ConfigError) as ei:
+        load_config(_example_minus(tmp_path, "probe", "ready_endpoint"))
+    assert "ready_endpoint" in str(ei.value)
+    assert "flavours.openclaw.probe" in str(ei.value)
+
+
+# ---------------------------------------------------------------------------
+# --wrapper-commit: compare against a value the guarded tree cannot assert
+# ---------------------------------------------------------------------------
+
+def _head(repo) -> str:
+    import subprocess
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+
+
+def test_wrapper_commit_matches_full_sha(tmp_path) -> None:
+    from image_compile.preflight import check_wrapper_rev
+    repo = _wrapper(tmp_path, CL_R8)
+    check_wrapper_rev(repo, "r8.1", expected_commit=_head(repo))
+
+
+def test_wrapper_commit_matches_abbreviated_sha(tmp_path) -> None:
+    """A recorded short sha (8bbfe22) must work unchanged -- git's own rules."""
+    from image_compile.preflight import check_wrapper_rev
+    repo = _wrapper(tmp_path, CL_R8)
+    check_wrapper_rev(repo, "r8.1", expected_commit=_head(repo)[:7])
+
+
+def test_the_trap_two_clean_trees_both_claiming_r8_1(tmp_path) -> None:
+    """The measured 2026-09-15 case: openclaw-runtime had main at 25a8b67 and
+    dev at 8bbfe22, both clean, both with `## r8.1` topmost. The rev+clean
+    checks pass on BOTH -- they read properties of whatever tree they run in.
+    Only the recorded commit separates them.
+    """
+    from image_compile.preflight import PreflightError, check_wrapper_rev
+    import subprocess
+    repo = _wrapper(tmp_path, CL_R8)                 # stands in for `main`
+    recorded = _head(repo)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "atlas-sync.sh").write_text("# scaffolding\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-qm", "atlas scaffolding"], cwd=repo, check=True)
+    moved_on = _head(repo)                            # stands in for `dev`
+    assert moved_on != recorded
+
+    # Without the pin: passes on the tree that merely claims r8.1.
+    check_wrapper_rev(repo, "r8.1")
+
+    # With it: refused, and the message names both commits.
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_rev(repo, "r8.1", expected_commit=recorded)
+    assert recorded[:7] in str(ei.value) and moved_on[:12] in str(ei.value)
+
+
+def test_wrapper_commit_undeterminable_fails_closed(tmp_path) -> None:
+    from image_compile.preflight import PreflightError, check_wrapper_commit
+    plain = tmp_path / "notgit"
+    plain.mkdir()
+    with pytest.raises(PreflightError) as ei:
+        check_wrapper_commit(plain, "8bbfe22")
+    assert "cannot determine HEAD" in str(ei.value)
+
+
+def test_wrapper_commit_rejects_an_unusable_id(tmp_path) -> None:
+    """Too short to be unambiguous, or not hex -- refuse rather than match loosely."""
+    from image_compile.preflight import PreflightError, check_wrapper_commit
+    repo = _wrapper(tmp_path, CL_R8)
+    for bad in ("8bb", "mainline", ""):
+        with pytest.raises(PreflightError) as ei:
+            check_wrapper_commit(repo, bad)
+        assert "not a usable commit id" in str(ei.value)

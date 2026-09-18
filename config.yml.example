@@ -2,8 +2,9 @@
 # docs/image-compile-brief-amendments-v0_1.md Amendment 1 for the multi-flavour shape.
 
 ghcr:
-  org: jobcpf                                         # GHCR org/user that owns the image repos
-  auth_method: docker_config                          # reads ~/.docker/config.json
+  org: onemorerabbit                                  # GHCR org that owns the image repos.
+                                                      # ORGANISATION, never a personal account
+                                                      # (agenteco-needs-ghcr-namespace, 2026-09-13).
 
 registry:
   root: ~/ansible/registry                            # where image_defaults/ and compatibility_matrix.yml live
@@ -27,10 +28,15 @@ flavours:
   openclaw:
     image_line: openclaw-runtime                      # → ghcr.io/<org>/openclaw-runtime
     wrapper_repo_default: ../openclaw-runtime         # path to the wrapper repo
+    wrapper_rev_check: true                           # cross-check --wrapper-rev against the
+                                                      # wrapper CHANGELOG's top `## r<N>`, and
+                                                      # refuse a dirty tree. Set false ONLY for a
+                                                      # flavour with no r<rev> convention; it is
+                                                      # the r3 mislabelled-image guard.
     upstream:
       kind: github_release
       repo: openclaw/openclaw
-      version_strip_prefix: "v"                       # "v2026.5.5" → image segment "2026.5.5"
+      version_strip_prefix: "v"                         # REQUIRED: "v2026.5.5" → "2026.5.5"
     probe:
       stub_config_template: openclaw/starting-openclaw.json.j2
       stub_secrets_template: openclaw/probe-stub-secrets.env
@@ -70,7 +76,7 @@ flavours:
     upstream:
       kind: github_release
       repo: nanoclaw/nanoclaw
-      version_strip_prefix: "v"
+      version_strip_prefix: "v"                         # REQUIRED
     probe:
       stub_config_template: nanoclaw/starting-nanoclaw.json.j2
       stub_secrets_template: nanoclaw/probe-stub-secrets.env
