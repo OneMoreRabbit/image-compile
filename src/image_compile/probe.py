@@ -316,6 +316,59 @@ def verify_process_supp_gids(docker: DockerCLI, setup: ProbeSetup,
         progress(f"supplementary gids {expected} present on the agent process")
 
 
+def verify_group_mediated_read(docker: DockerCLI, setup: ProbeSetup,
+                               progress: Callable[[str], None] | None = None) -> None:
+    """Assert the agent can actually READ a file granted only by a supplementary group.
+
+    Guard 9 proves the gids are in the process credentials. This proves the
+    capability they exist to provide, which is what the compiled plan promises
+    and what an operator would call working.
+
+    It matters because `AGENT_PRIMARY_GID` is the agent's PERSONAL gid, so every
+    classification grant lands in the supplementary set: a credential check that
+    passed while reads failed would be the adjacent-measurement trap again, one
+    level up.
+
+    The fixture is deliberately hostile to accident -- mode 0640 and owned by
+    root with the supplementary group, so owner bits and other bits both deny.
+    Only the group grant can satisfy the read.
+    """
+    gid = PROBE_SUPP_GIDS[0]
+    path = "/tmp/probe-group-grant"
+    setup_script = (
+        f"install -o 0 -g {gid} -m 0640 /dev/null {path} && "
+        f"printf 'granted' > {path} && stat -c '%U:%G %a' {path}"
+    )
+    try:
+        docker.run(["exec", "--user", "0:0", setup.container_name, "sh", "-c", setup_script])
+    except DockerError as e:
+        raise ProbeError(
+            f"could not place the group-grant fixture in {setup.container_name}: "
+            f"{e.stderr or e}"
+        ) from e
+
+    # Read it as the AGENT process's identity, not a fresh resolution: reuse the
+    # running process's credentials by entering via its own uid.
+    try:
+        result = docker.run([
+            "exec", "--user", str(setup.agent_uid), setup.container_name,
+            "sh", "-c", f"cat {path}",
+        ])
+    except DockerError as e:
+        raise ProbeError(
+            f"the agent identity CANNOT read a file granted solely by supplementary "
+            f"group {gid} (mode 0640, root:{gid}). Group-mediated access is dead at "
+            f"process level -- every classification grant in a compiled plan would "
+            f"fail this way, silently, with no error at deploy. {e.stderr or e}"
+        ) from e
+    if result.stdout.strip() != "granted":
+        raise ProbeError(
+            f"group-granted read returned {result.stdout.strip()!r}, expected 'granted'"
+        )
+    if progress:
+        progress(f"group-mediated read through supplementary gid {gid} succeeded")
+
+
 def verify_bundled_plugins(docker: DockerCLI, setup: ProbeSetup,
                            progress: Callable[[str], None] | None = None) -> None:
     """Assert every baked plugin is visible as a BUNDLED (stock) extension.
@@ -533,6 +586,7 @@ def run_probe(flavour: FlavourConfig, image_tag: str, image_version: str,
 
         verify_bundled_plugins(docker, setup, progress=progress)
         verify_process_supp_gids(docker, setup, progress=progress)
+        verify_group_mediated_read(docker, setup, progress=progress)
 
         diff_output = capture_diff(docker, setup)
         progress(f"docker diff: {diff_output.count(chr(10))} change lines")
