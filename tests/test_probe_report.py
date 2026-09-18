@@ -307,23 +307,48 @@ def test_parse_proc_groups_reads_the_groups_line() -> None:
     assert parse_proc_groups("Name:\tx\n") == []
 
 
-def test_missing_supp_gids_detects_the_real_defect() -> None:
-    """The measured 2026-09-18 case: the wrapper usermods the gids onto the
-    account, then drops privilege with the explicit gosu uid:gid form, which
-    populates no supplementary set. /etc/group is right; the process is not."""
-    from image_compile.probe import missing_process_supp_gids
-    assert missing_process_supp_gids(STATUS_WITHOUT, (64010, 64011)) == [64010, 64011]
+def test_the_measured_sam_case_empty_groups() -> None:
+    """Measured on Sam, 2026-09-18: the explicit `gosu uid:gid` form leaves
+    Groups: ENTIRELY EMPTY -- it does not even echo the primary gid. My
+    prediction was "primary alone"; the truth was cleaner and the test is
+    written against the property, not against either observation."""
+    from image_compile.probe import supp_gid_discrepancy
+    empty = "Groups:\t\n"
+    missing, unexpected = supp_gid_discrepancy(empty, (64010, 64011), 12003)
+    assert missing == [64010, 64011]
+    assert unexpected == []
 
 
-def test_missing_supp_gids_empty_when_present() -> None:
-    from image_compile.probe import missing_process_supp_gids
-    assert missing_process_supp_gids(STATUS_WITH, (64010, 64011)) == []
+def test_property_holds_when_the_set_matches() -> None:
+    from image_compile.probe import supp_gid_discrepancy
+    assert supp_gid_discrepancy(STATUS_WITH, (64010, 64011), 1001) == ([], [])
+
+
+def test_primary_gid_presence_is_not_evidence_either_way() -> None:
+    """initgroups structurally includes the primary gid, so it must not count as
+    either a match or an extra."""
+    from image_compile.probe import supp_gid_discrepancy
+    with_primary = "Groups:\t64010 64011 12003\n"
+    without_primary = "Groups:\t64010 64011\n"
+    assert supp_gid_discrepancy(with_primary, (64010, 64011), 12003) == ([], [])
+    assert supp_gid_discrepancy(without_primary, (64010, 64011), 12003) == ([], [])
+
+
+def test_an_unrequested_group_is_a_failure_not_a_bonus() -> None:
+    """Contains-the-requested-gids passes for the wrong reason here: an extra
+    supplementary group is privilege the agent was never granted."""
+    from image_compile.probe import supp_gid_discrepancy
+    extra = "Groups:\t64010 64011 999 12003\n"
+    missing, unexpected = supp_gid_discrepancy(extra, (64010, 64011), 12003)
+    assert missing == []
+    assert unexpected == [999]
 
 
 def test_partial_attachment_is_still_a_failure() -> None:
-    from image_compile.probe import missing_process_supp_gids
+    from image_compile.probe import supp_gid_discrepancy
     partial = "Groups:\t64010 1001\n"
-    assert missing_process_supp_gids(partial, (64010, 64011)) == [64011]
+    missing, _ = supp_gid_discrepancy(partial, (64010, 64011), 1001)
+    assert missing == [64011]
 
 
 def test_probe_requests_supp_gids_at_all() -> None:

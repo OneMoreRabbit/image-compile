@@ -233,11 +233,27 @@ def parse_proc_groups(status_output: str) -> list[int]:
     return []
 
 
-def missing_process_supp_gids(status_output: str,
-                              expected: Iterable[int]) -> list[int]:
-    """Requested supplementary gids absent from the agent process's credentials."""
-    actual = set(parse_proc_groups(status_output))
-    return [gid for gid in expected if gid not in actual]
+def supp_gid_discrepancy(status_output: str, expected: Iterable[int],
+                         primary_gid: int) -> tuple[list[int], list[int]]:
+    """(missing, unexpected) comparing the process's supplementary set to what was asked.
+
+    Asserts the PROPERTY -- the set equals the request -- rather than either
+    symptom of getting it wrong:
+
+    * "is it empty?" describes one code path. Measured on Sam 2026-09-18, the
+      explicit `gosu uid:gid` form leaves `Groups:` **entirely empty** -- it does
+      not even echo the primary gid. A test written against emptiness would pass
+      any future breakage that happened to leave one group behind.
+    * "does it contain the requested gids?" passes for the wrong reason when
+      something else has left extra groups attached, and an UNEXPECTED
+      supplementary group is privilege the agent was never granted.
+
+    The primary gid is excluded from the comparison: `initgroups` structurally
+    includes it, so its presence is not evidence either way.
+    """
+    actual = set(parse_proc_groups(status_output)) - {primary_gid}
+    want = set(expected)
+    return sorted(want - actual), sorted(actual - want)
 
 # Guard 8 (r8.1): markers of a plugin failing to LOAD (not to connect —
 # stub creds can never connect, and connectivity is out of probe scope).
@@ -274,7 +290,15 @@ def verify_process_supp_gids(docker: DockerCLI, setup: ProbeSetup,
     """Assert the agent process actually holds the requested supplementary gids.
 
     Reads /proc/<pid>/status for the first process running as AGENT_UID -- the
-    credentials the wrapper's own privilege drop produced. Raises ProbeError when
+    credentials the wrapper's own privilege drop produced.
+
+    It selects by UID, never by PID. Container PID 1 is tini running the
+    entrypoint AS ROOT (Uid 0, Groups 0); reading it and pasting the result
+    unexamined would grade the image innocent of exactly this defect. That
+    happened on 2026-09-18 -- a specified check named PID 1 and was caught only
+    because the operator examined the output before reporting it. The agent is
+    the child that gosu execs, and selecting on uid is what makes finding it
+    structural rather than a matter of getting the PID right. Raises ProbeError when
     a requested gid is missing, which is the build-time failure that stops a
     disk-parity-without-process-parity image from ever being published.
     """
@@ -302,15 +326,23 @@ def verify_process_supp_gids(docker: DockerCLI, setup: ProbeSetup,
     if not result.stdout.strip():
         raise ProbeError(
             f"no process running as uid {setup.agent_uid} found in the probe "
-            f"container -- cannot verify supplementary groups"
+            f"container -- cannot verify supplementary groups. Refusing to grade "
+            f"this on any other process: PID 1 is root and would pass vacuously."
         )
-    missing = missing_process_supp_gids(result.stdout, expected)
+    missing, unexpected = supp_gid_discrepancy(
+        result.stdout, expected, setup.agent_primary_gid)
     if missing:
         raise ProbeError(
             f"supplementary gids {missing} were requested via AGENT_SUPP_GIDS but "
             f"are NOT in the agent process credentials ({result.stdout.strip()}). "
             f"The wrapper may attach them to the account and still drop them at the "
             f"privilege hand-off -- disk parity is not process parity."
+        )
+    if unexpected:
+        raise ProbeError(
+            f"the agent process carries supplementary gids {unexpected} that were "
+            f"never requested ({result.stdout.strip()}). Unexpected group membership "
+            f"is privilege the agent was not granted."
         )
     if progress:
         progress(f"supplementary gids {expected} present on the agent process")
