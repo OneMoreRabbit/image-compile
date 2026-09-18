@@ -63,9 +63,9 @@ Edit the `flavours:` block to add or remove flavours.
 
 ## Status
 
-**Released: `v0.3.0`** (2026-09-13) — the full pipeline is implemented. `build` runs preflight,
+**Released: `v0.7.0`** (2026-09-18) — the full pipeline is implemented. `build` runs preflight,
 buildx, smoke, probe, bundle and push; `probe`, `list`, `verify` and `diff` are live. Two
-flavours are configured (`openclaw`, `nanoclaw`). 101 tests pass.
+flavours are configured (`openclaw`, `nanoclaw`). 125 tests pass.
 
 Current wrapper baseline: `openclaw-runtime` **v0.8.0**, wrapper revision **r8.1**, against
 upstream OpenClaw `2026.6.11`. Note the two numbering schemes are independent — see that repo's
@@ -74,8 +74,14 @@ CHANGELOG.
 Build integrity, added after the r3 mislabelled-image incident: `--wrapper-rev` is **required**
 (it sets the image tag and the wrapper-rev label, so it is declared, never defaulted) and is
 cross-checked against the wrapper CHANGELOG's top `## r<N>` heading, with the wrapper worktree
-required clean. Both checks fail closed — an undeterminable answer is a refusal, not a pass.
-`--allow-dirty` accepts an unreproducible build knowingly.
+required clean. `--wrapper-commit <sha>` additionally pins the exact checkout — the only check
+that compares against a value recorded outside the tree being built. All fail closed — an
+undeterminable answer is a refusal, not a pass. `--allow-dirty` accepts an unreproducible build
+knowingly.
+
+Probe guards: baked plugins must resolve as bundled stock extensions, no plugin-load errors, and
+(guard 9/9b) the agent process's supplementary group set must **equal** the requested
+`AGENT_SUPP_GIDS` and satisfy a real read through a group grant.
 
 Images publish to `ghcr.io/onemorerabbit/` — the organisation, never a personal account.
 
