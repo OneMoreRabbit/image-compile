@@ -357,3 +357,47 @@ def test_probe_requests_supp_gids_at_all() -> None:
     revision, so no boot ever exercised the path."""
     from image_compile.probe import PROBE_SUPP_GIDS
     assert len(PROBE_SUPP_GIDS) >= 2
+
+
+# ---------------------------------------------------------------------------
+# Guard 9 round 3: set-equals passes vacuously when both sides are empty
+# ---------------------------------------------------------------------------
+
+def test_empty_request_equals_empty_set_the_vacuous_pass() -> None:
+    """The defect orch caught: the PROPERTY assertion is satisfied by an agent
+    that was granted nothing and received nothing. Demonstrated, so the fix
+    below is anchored to a real hole rather than a worry."""
+    from image_compile.probe import supp_gid_discrepancy
+    assert supp_gid_discrepancy("Groups:\t\n", (), 14001) == ([], [])
+
+
+def test_grants_declared_but_nothing_requested_is_unconfigured() -> None:
+    """Estate state on 2026-09-18: AGENT_SUPP_GIDS empty everywhere because
+    agent-compile emits it from an unpopulated field. Every deployed agent would
+    have gone green while holding no grant at all."""
+    from image_compile.probe import unconfigured_supp_request
+    assert unconfigured_supp_request((), ["org_arc_classified"]) is True
+
+
+def test_no_grants_and_no_request_is_legitimately_fine() -> None:
+    """Sam's shape: access[] empty, so asking for nothing is correct, not a
+    defect. The check must not cry wolf on an agent with no grants."""
+    from image_compile.probe import unconfigured_supp_request
+    assert unconfigured_supp_request((), []) is False
+
+
+def test_grants_declared_and_requested_is_fine() -> None:
+    from image_compile.probe import unconfigured_supp_request
+    assert unconfigured_supp_request((64010,), ["org_arc_classified"]) is False
+
+
+def test_probe_guard_refuses_to_run_against_an_empty_request(monkeypatch) -> None:
+    """The probe's own request can never be empty, but if someone empties it the
+    guard must refuse rather than pass — a guard that cannot fail is worse than
+    no guard, because it reports coverage."""
+    import image_compile.probe as probe
+    from image_compile.probe import ProbeError
+    monkeypatch.setattr(probe, "PROBE_SUPP_GIDS", ())
+    with pytest.raises(ProbeError) as ei:
+        probe.verify_process_supp_gids(None, None)
+    assert "unconfigured" in str(ei.value)

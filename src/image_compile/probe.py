@@ -233,6 +233,25 @@ def parse_proc_groups(status_output: str) -> list[int]:
     return []
 
 
+def unconfigured_supp_request(requested: Iterable[int],
+                              declared_grants: Iterable[str]) -> bool:
+    """True when the registry declares access grants but nothing was requested.
+
+    Guard 9 asserts the process's supplementary set EQUALS the request. That is
+    the right property and it has one vacuous case: an empty request equals an
+    empty set, so a completely ungranted agent goes green. On the estate as of
+    2026-09-18 the request is empty everywhere -- agent-compile emits
+    AGENT_SUPP_GIDS from an unpopulated field -- so the hardened guard would have
+    passed every deployed agent while granting none of them anything.
+
+    A deployment whose registry declares `access[]` grants and whose
+    AGENT_SUPP_GIDS is empty is not passing; it is unconfigured, and the two look
+    identical from inside the container. Only the registry can tell them apart,
+    which is why this check takes both.
+    """
+    return bool(list(declared_grants)) and not list(requested)
+
+
 def supp_gid_discrepancy(status_output: str, expected: Iterable[int],
                          primary_gid: int) -> tuple[list[int], list[int]]:
     """(missing, unexpected) comparing the process's supplementary set to what was asked.
@@ -304,7 +323,11 @@ def verify_process_supp_gids(docker: DockerCLI, setup: ProbeSetup,
     """
     expected = list(PROBE_SUPP_GIDS)
     if not expected:
-        return
+        raise ProbeError(
+            "PROBE_SUPP_GIDS is empty, so this guard would compare an empty set "
+            "against an empty set and pass without testing anything. An agent that "
+            "asks for nothing and receives nothing is not passing, it is unconfigured."
+        )
     if setup.agent_primary_gid in expected:
         raise ProbeError(
             f"probe supplementary gids {expected} collide with the probe's primary "
