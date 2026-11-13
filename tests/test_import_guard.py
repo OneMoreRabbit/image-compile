@@ -30,8 +30,12 @@ def _imported_roots(tree: ast.AST) -> set[str]:
 
 def test_no_other_compiler_is_imported() -> None:
     assert PACKAGE_ROOT.is_dir(), f"package root missing: {PACKAGE_ROOT}"
+    files = sorted(PACKAGE_ROOT.rglob("*.py"))
+    # A guard that read nothing proves nothing: a moved src/ must fail here,
+    # not pass vacuously (need point 5).
+    assert files, f"no Python files found under {PACKAGE_ROOT} — nothing was checked"
     offences: list[str] = []
-    for path in sorted(PACKAGE_ROOT.rglob("*.py")):
+    for path in files:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         hits = _imported_roots(tree) & FORBIDDEN
         for name in sorted(hits):
